@@ -1,1 +1,48 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Arimo:ital,wght@0,400..700;1,400..700&family=Lora:ital,wght@0,400..700;1,400..700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&family=Noto+Serif:ital,wght@0,400..700;1,400..700&display=swap');
+
+/* Force high quality Vietnamese serif font rendering in contract document */
+.contract-document, .contract-document * {
+  font-family: 'Noto Serif', 'Merriweather', 'Lora', 'Times New Roman', Times, serif !important;
+}
+
+/* Print CSS to isolate contract paper when printing PDF */
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  
+  /* Hide all elements by default */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Show only the contract preview area */
+  #printable-contract-preview, #printable-contract-preview * {
+    visibility: visible !important;
+  }
+  
+  #printable-contract-preview {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 15mm;
+  }
+}
 
