@@ -1,0 +1,8 @@
+{
+  "name": "Remix CÔNG TY TNHH SPV GROUP - Quản lý hợp đồng",
+  "description": "Website quản lý hợp đồng, tạo lập, chỉnh sửa, lưu trữ, phân tích và thống kê hợp đồng.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
