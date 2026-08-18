@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HardDrive, Folder, FolderPlus, Check, X, ArrowRight, ShieldCheck } from 'lucide-react';
-import { DriveFolder, DEFAULT_DRIVE_FOLDERS, getSelectedDriveFolder, setSelectedDriveFolder, getConnectedDriveAccount } from '../lib/drive';
+import { DriveFolder, getAllDriveFolders, addCustomDriveFolder, getSelectedDriveFolder, setSelectedDriveFolder, getConnectedDriveAccount } from '../lib/drive';
 
 interface Props {
   isOpen: boolean;
@@ -12,9 +12,17 @@ interface Props {
 
 export default function GoogleDriveFolderModal({ isOpen, onClose, onSelectFolder, fileName, isSyncing }: Props) {
   const currentAccount = getConnectedDriveAccount();
+  const [folders, setFolders] = useState<DriveFolder[]>(() => getAllDriveFolders());
   const [selectedFolder, setSelectedFolder] = useState<DriveFolder>(() => getSelectedDriveFolder());
   const [customFolderName, setCustomFolderName] = useState('');
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFolders(getAllDriveFolders());
+      setSelectedFolder(getSelectedDriveFolder());
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -26,6 +34,7 @@ export default function GoogleDriveFolderModal({ isOpen, onClose, onSelectFolder
         name: `📁 ${customFolderName.trim()}`,
         description: 'Thư mục mới tạo trên Google Drive',
       };
+      addCustomDriveFolder(finalFolder);
     }
     setSelectedDriveFolder(finalFolder);
     onSelectFolder(finalFolder);
@@ -73,7 +82,7 @@ export default function GoogleDriveFolderModal({ isOpen, onClose, onSelectFolder
             </label>
 
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {DEFAULT_DRIVE_FOLDERS.map((folder) => {
+              {folders.map((folder) => {
                 const isSelected = !isCreatingNew && selectedFolder.id === folder.id;
                 return (
                   <div
