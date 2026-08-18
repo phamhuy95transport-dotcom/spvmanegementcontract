@@ -24,6 +24,33 @@ export const DEFAULT_DRIVE_FOLDERS: DriveFolder[] = [
 
 const DRIVE_ACCOUNT_STORAGE_KEY = 'spv_contract_hub_google_drive_account';
 const DRIVE_FOLDER_STORAGE_KEY = 'spv_contract_hub_google_drive_selected_folder';
+const CUSTOM_DRIVE_FOLDERS_STORAGE_KEY = 'spv_contract_hub_custom_drive_folders';
+
+export const getCustomDriveFolders = (): DriveFolder[] => {
+  try {
+    const raw = localStorage.getItem(CUSTOM_DRIVE_FOLDERS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to parse custom drive folders from localStorage', e);
+  }
+  return [];
+};
+
+export const addCustomDriveFolder = (folder: DriveFolder): DriveFolder[] => {
+  const current = getCustomDriveFolders();
+  const exists = current.some(f => f.id === folder.id || f.name.toLowerCase() === folder.name.toLowerCase());
+  if (!exists) {
+    const updated = [folder, ...current];
+    localStorage.setItem(CUSTOM_DRIVE_FOLDERS_STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  }
+  return current;
+};
+
+export const getAllDriveFolders = (): DriveFolder[] => {
+  const custom = getCustomDriveFolders();
+  return [...custom, ...DEFAULT_DRIVE_FOLDERS];
+};
 
 export const getConnectedDriveAccount = (): DriveAccountInfo | null => {
   try {
