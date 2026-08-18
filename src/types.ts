@@ -10,7 +10,11 @@ export interface Contract {
   effective_date: string | null;
   expiration_date: string | null;
   file_id: string | null; // Google Drive File ID
+  file_url?: string | null; // Base64 Data URL, Object URL, or Direct Link
+  file_name?: string | null;
+  file_type?: string | null;
   ocr_content: string | null;
+  ocr_engine?: string | null;
   created_at: string;
   updated_at: string;
 }
