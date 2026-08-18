@@ -17,6 +17,11 @@ import { upsertContract } from '../lib/contractsService';
 import { uploadFileToDrive, getConnectedDriveAccount, DriveFolder } from '../lib/drive';
 import { lookupTaxCode } from '../lib/taxCodeService';
 import GoogleDriveFolderModal from '../components/GoogleDriveFolderModal';
+import { pdfjs } from 'react-pdf';
+if (pdfjs && pdfjs.GlobalWorkerOptions) {
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+}
+import { extractRawTextFromFile } from '../lib/ocrService';
 
 interface CustomArticleItem {
   number: string;
@@ -215,10 +220,24 @@ async function extractTextFromDocx(file: File): Promise<string> {
 
 async function extractTextFromPdf(file: File): Promise<string> {
   try {
-    return await extractTextFromTxt(file);
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map((item: any) => item.str).join(' ');
+      if (pageText.trim()) {
+        fullText += `\n--- Trang ${i} ---\n` + pageText;
+      }
+    }
+    if (fullText.trim().length > 10) {
+      return fullText.trim();
+    }
   } catch (e) {
-    return '';
+    console.warn('pdfjs text extraction notice:', e);
   }
+  return extractTextFromTxt(file);
 }
 
 function analyzeContractTextLocally(rawText: string, fileName: string): ContractTemplateItem {

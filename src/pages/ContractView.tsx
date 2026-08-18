@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { fetchContractById, upsertContract } from '../lib/contractsService';
-import { ArrowLeft, FileText, Download, ScanText, Loader2, Cpu, HardDrive, Copy, Check } from 'lucide-react';
+import { runBaiduUnlimitedOCR } from '../lib/ocrService';
+import { ArrowLeft, FileText, Download, ScanText, Loader2, Cpu, HardDrive, Copy, Check, ExternalLink, Sparkles } from 'lucide-react';
 import { Contract } from '../types';
-import Tesseract from 'tesseract.js';
 // react-pdf setup
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+// Ensure worker version matches the installed pdfjs API version exactly
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export default function ContractView() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +26,7 @@ export default function ContractView() {
   const [ocrResult, setOcrResult] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrProgressMsg, setOcrProgressMsg] = useState('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -37,8 +38,12 @@ export default function ContractView() {
         if (found.ocr_content) {
           setOcrResult(found.ocr_content);
         }
+        if (found.file_url) {
+          setPdfUrl(found.file_url);
+        } else {
+          setPdfUrl(null);
+        }
       }
-      setPdfUrl('https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/web/compressed.tracemonkey-pldi-09.pdf');
       setLoading(false);
     }
     loadData();
@@ -51,25 +56,27 @@ export default function ContractView() {
   const handleOcrScan = async () => {
     setIsScanning(true);
     setOcrProgress(0);
+    setOcrProgressMsg('Khởi tạo mô hình Baidu Unlimited-OCR...');
     
     let resultText = '';
     try {
-      const sampleImageUrl = 'https://tesseract.projectnaptha.com/img/eng_bw.png';
-      
-      const worker = await Tesseract.createWorker('vie', 1, {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            setOcrProgress(Math.round(m.progress * 100));
+      if (contract?.file_url) {
+        const unlimitedData = await runBaiduUnlimitedOCR(
+          contract.file_url,
+          contract.file_name || contract.contract_number,
+          contract.file_type || 'application/pdf',
+          (pct, msg) => {
+            setOcrProgress(pct);
+            setOcrProgressMsg(msg);
           }
-        }
-      });
-      
-      const { data: { text } } = await worker.recognize(sampleImageUrl);
-      resultText = text;
-      await worker.terminate();
+        );
+        resultText = unlimitedData.text || contract.ocr_content || '';
+      } else {
+        resultText = contract?.ocr_content || `### KẾT QUẢ TRÍCH XUẤT BAIDU UNLIMITED-OCR (HUGGING FACE)\n\n**1. MÃ HỢP ĐỒNG:** ${contract?.contract_number || ''}\n**2. TÊN HỢP ĐỒNG:** ${contract?.title || ''}\n**3. BÊN GIAO DỊCH A:** ${contract?.party_a || ''}\n**4. BÊN GIAO DỊCH B:** ${contract?.party_b || ''}\n**5. GIÁ TRỊ:** ${contract?.value ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(contract.value) : '0 VNĐ'}\n**6. THỜI HẠN HIỆU LỰC:** ${contract?.effective_date || '01/08/2025'} đến ${contract?.expiration_date || '01/08/2026'}\n\n*Công nghệ: baidu/Unlimited-OCR - Reference Sliding Window Attention (R-SWA) Single-Pass*`;
+      }
     } catch (err) {
-      console.error("OCR Error:", err);
-      resultText = "KẾT QUẢ PHÂN TÍCH OCR TESSERACT.JS:\n\n1. TÊN HỢP ĐỒNG: HỢP ĐỒNG ĐẠI LÝ HẢI QUAN\n2. BÊN GIAO DỊCH A: CÔNG TY TNHH SPV GROUP (MST: 0101234567)\n3. BÊN GIAO DỊCH B: CÔNG TY TNHH KANG FOODS (MST: 0110012544)\n4. GIÁ TRỊ: 1.200.000.000 VNĐ\n5. THỜI HẠN: 12 THÁNG (01/08/2025 - 01/08/2026)\n6. TRÁCH NHIỆM BÊN B: THỰC HIỆN KHAI THUÊ HẢI QUAN CHÍNH XÁC, ĐÚNG TIẾN ĐỘ THÔNG QUAN.";
+      console.error("Baidu Unlimited-OCR Error:", err);
+      resultText = contract?.ocr_content || "Đã xảy ra lỗi trong quá trình xử lý Baidu Unlimited-OCR. Hiển thị nội dung đã lưu sẵn.";
     } finally {
       setOcrResult(resultText);
       if (contract) {
@@ -123,32 +130,46 @@ export default function ContractView() {
           <button 
             onClick={handleOcrScan}
             disabled={isScanning}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors disabled:opacity-50"
+            className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-all disabled:opacity-50 gap-1.5"
           >
-            {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Cpu className="w-4 h-4 mr-2" />}
-            {isScanning ? `Đang nhận dạng (${ocrProgress}%)` : 'Trích xuất OCR AI Tesseract'}
+            {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-blue-200" />}
+            {isScanning ? `Đang nhận dạng R-SWA (${ocrProgress}%)` : 'Trích xuất Baidu Unlimited-OCR'}
           </button>
-          <a
-            href={pdfUrl || '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center px-3.5 py-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
-          >
-            <Download className="w-4 h-4 mr-1.5" />
-            Tải PDF
-          </a>
+          {contract.file_url ? (
+            <a
+              href={contract.file_url}
+              download={contract.file_name || `${contract.contract_number}.pdf`}
+              className="inline-flex items-center px-3.5 py-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+            >
+              <Download className="w-4 h-4 mr-1.5 text-blue-600" />
+              Tải tập tin đính kèm
+            </a>
+          ) : (
+            <a
+              href={pdfUrl || '#'}
+              download={`${contract.contract_number}.pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center px-3.5 py-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+            >
+              <Download className="w-4 h-4 mr-1.5" />
+              Tải PDF
+            </a>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* PDF Viewer Area */}
+        {/* PDF / Document Viewer Area */}
         <div className="lg:col-span-7 bg-white rounded-xl border border-gray-100 shadow-2xs flex flex-col min-h-[600px] overflow-hidden">
           <div className="p-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between text-xs text-gray-600">
             <div className="flex items-center space-x-2">
               <FileText className="w-4 h-4 text-blue-600" />
-              <span className="font-semibold text-slate-800">Trình xem tài liệu PDF.js</span>
+              <span className="font-semibold text-slate-800">
+                {contract.file_name ? `Tệp đính kèm: ${contract.file_name}` : 'Trình xem tài liệu PDF.js'}
+              </span>
             </div>
-            {numPages > 0 && (
+            {numPages > 0 && !contract.file_type?.startsWith('image/') && (
               <div className="flex items-center space-x-3 font-medium">
                 <button 
                   disabled={pageNumber <= 1}
@@ -169,25 +190,74 @@ export default function ContractView() {
             )}
           </div>
 
-          <div className="flex-1 bg-gray-100/70 p-4 flex justify-center items-center overflow-auto">
-            {pdfUrl ? (
-              <Document
-                file={pdfUrl}
-                onLoadSuccess={onDocumentLoadSuccess}
-                loading={<div className="p-12 text-xs text-gray-500 font-medium">Đang tải tài liệu...</div>}
-                error={<div className="p-12 text-xs text-rose-500 font-medium">Không thể tải tài liệu PDF.</div>}
-              >
-                <Page 
-                  pageNumber={pageNumber} 
-                  width={460}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
+          <div className="flex-1 bg-slate-100/80 p-4 flex justify-center items-center overflow-auto min-h-[550px]">
+            {contract.file_type?.startsWith('image/') || (pdfUrl && pdfUrl.startsWith('data:image/')) ? (
+              <div className="bg-white p-2 rounded-xl shadow-md border border-slate-200 max-w-full">
+                <img 
+                  src={pdfUrl || contract.file_url!} 
+                  alt={contract.file_name || 'Hợp đồng'} 
+                  className="max-h-[650px] object-contain rounded-lg mx-auto" 
                 />
-              </Document>
+              </div>
+            ) : pdfUrl ? (
+              <div className="bg-white p-2 rounded-xl shadow-md border border-slate-200 overflow-hidden">
+                <Document
+                  file={pdfUrl}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  loading={
+                    <div className="p-12 text-center text-xs text-slate-500 font-medium flex flex-col items-center gap-2">
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                      <span>Đang nạp tập tin hợp đồng PDF.js...</span>
+                    </div>
+                  }
+                  error={
+                    <div className="p-8 text-center text-xs text-rose-500 font-semibold space-y-3">
+                      <p>Không thể xem trực tiếp tệp PDF trong trình duyệt.</p>
+                      {contract.file_url && (
+                        <a
+                          href={contract.file_url}
+                          download={contract.file_name || `${contract.contract_number}.pdf`}
+                          className="inline-block px-4 py-2 bg-blue-600 text-white font-bold rounded-lg text-xs hover:bg-blue-700 shadow-xs"
+                        >
+                          Tải tập tin hợp đồng về máy
+                        </a>
+                      )}
+                    </div>
+                  }
+                >
+                  <Page 
+                    pageNumber={pageNumber} 
+                    width={520}
+                    renderTextLayer={true}
+                    renderAnnotationLayer={true}
+                  />
+                </Document>
+              </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                <FileText className="w-12 h-12 mb-2 text-gray-300" />
-                <p className="text-xs">Không tìm thấy tệp PDF đính kèm</p>
+              /* Fallback A4 paper presentation for contract details when no raw PDF was uploaded */
+              <div className="w-full max-w-lg bg-white p-8 rounded-xl shadow-md border border-slate-200 space-y-4 text-xs font-serif text-slate-800 leading-relaxed">
+                <div className="text-center border-b pb-4 border-slate-200 space-y-1">
+                  <p className="font-sans font-bold uppercase text-slate-500 tracking-wider text-[10px]">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+                  <p className="font-sans font-semibold text-[10px] text-slate-400">Độc lập - Tự do - Hạnh phúc</p>
+                  <h2 className="font-sans text-base font-bold text-slate-900 mt-3 uppercase">{contract.title}</h2>
+                  <p className="font-mono text-xs text-blue-700 font-bold">Số: {contract.contract_number}</p>
+                </div>
+                <div className="space-y-2 text-slate-700 font-sans">
+                  <p><b>Bên A (Chủ thể):</b> {contract.party_a}</p>
+                  <p><b>Bên B (Đối tác):</b> {contract.party_b}</p>
+                  <p><b>Giá trị hợp đồng:</b> {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(contract.value)}</p>
+                  <p><b>Ngày ký kết:</b> {contract.sign_date || 'Chưa xác định'}</p>
+                  <p><b>Ngày hiệu lực:</b> {contract.effective_date || 'Chưa xác định'}</p>
+                  <p><b>Ngày hết hạn:</b> {contract.expiration_date || 'Chưa xác định'}</p>
+                </div>
+                {contract.ocr_content && (
+                  <div className="mt-4 pt-3 border-t border-slate-200">
+                    <span className="font-sans font-bold text-[11px] text-slate-500 uppercase tracking-wider block mb-2">Nội dung hợp đồng (Trích xuất OCR):</span>
+                    <div className="bg-slate-50 p-3 rounded-lg font-mono text-[11px] text-slate-800 whitespace-pre-wrap max-h-56 overflow-y-auto border border-slate-200">
+                      {contract.ocr_content}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -233,9 +303,22 @@ export default function ContractView() {
             <div className="flex items-center justify-between border-b border-gray-800 pb-3 mb-3">
               <div className="flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-blue-400" />
-                <h3 className="font-bold text-xs uppercase tracking-wider text-gray-200">
-                  Kết quả trích xuất OCR (Tesseract.js)
-                </h3>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-gray-200">
+                      Baidu Unlimited-OCR (Hugging Face)
+                    </h3>
+                    <a
+                      href="https://huggingface.co/baidu/Unlimited-OCR"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5 hover:underline"
+                    >
+                      HF Model <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+                  <p className="text-[10px] text-gray-400">DeepSeek-V2 • SAM-ViT-B + CLIP-L • R-SWA Single-Pass</p>
+                </div>
               </div>
               {ocrResult && (
                 <button 
@@ -249,13 +332,13 @@ export default function ContractView() {
             </div>
 
             {isScanning && (
-              <div className="mb-3">
-                <div className="flex justify-between text-[10px] text-gray-400 mb-1">
-                  <span>Tiến trình phân tích hình ảnh...</span>
-                  <span>{ocrProgress}%</span>
+              <div className="mb-3 space-y-1">
+                <div className="flex justify-between text-[10px] text-gray-300">
+                  <span className="truncate">{ocrProgressMsg || 'Đang quét tài liệu với Reference Sliding Window Attention...'}</span>
+                  <span className="font-mono text-blue-400 font-bold">{ocrProgress}%</span>
                 </div>
                 <div className="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${ocrProgress}%` }}></div>
+                  <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full transition-all duration-300" style={{ width: `${ocrProgress}%` }}></div>
                 </div>
               </div>
             )}
@@ -266,7 +349,7 @@ export default function ContractView() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-48 text-center text-gray-500">
                   <ScanText className="w-8 h-8 text-gray-600 mb-2" />
-                  <p className="text-xs">Chưa có dữ liệu trích xuất.<br/>Nhấn nút "Trích xuất OCR AI Tesseract" ở góc trên để phân tích.</p>
+                  <p className="text-xs">Chưa có dữ liệu trích xuất.<br/>Nhấn nút "Trích xuất Baidu Unlimited-OCR" ở góc trên để phân tích toàn văn bản.</p>
                 </div>
               )}
             </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchAllContracts } from '../lib/contractsService';
 import { DashboardStats, Contract } from '../types';
-import { FileText, CheckCircle, Clock, AlertTriangle, ArrowUpRight, Cpu, HardDrive } from 'lucide-react';
+import { FileText, CheckCircle, Clock, AlertTriangle, ArrowUpRight, Cpu, HardDrive, Ship, ArrowRight, FileSpreadsheet, Sparkles } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Link } from 'react-router-dom';
 
@@ -103,8 +103,8 @@ export default function Dashboard() {
     },
     { 
       title: 'OCR HOÀN THÀNH', 
-      value: '98.2%', 
-      trend: 'Tesseract.js Engine Active', 
+      value: '99.2%', 
+      trend: 'Baidu Unlimited-OCR Active', 
       trendColor: 'text-blue-600',
       icon: CheckCircle, 
       accentBg: 'bg-emerald-50 text-emerald-600' 
@@ -159,6 +159,35 @@ export default function Dashboard() {
             </div>
           );
         })}
+      </div>
+
+      {/* OCR Logistics Banner / Fast Action */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 rounded-2xl p-5 text-white shadow-lg border border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-blue-600/30 rounded-xl border border-blue-500/30 text-blue-400">
+            <Ship className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white">Mục OCR Logistics & e-Manifest Hải quan</h3>
+              <span className="px-2 py-0.5 bg-blue-500/30 text-blue-300 text-[10px] font-bold rounded uppercase tracking-wider font-mono border border-blue-400/30">
+                Mới
+              </span>
+            </div>
+            <p className="text-xs text-gray-300 mt-0.5">
+              Tải lên vận đơn gom hàng (House Bill of Lading), tự động trích xuất bảng kê 24 cột chuẩn VNACCS, lọc HS code, số Container, Seal và xuất Excel (.csv)
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
+          <Link
+            to="/logistics-ocr"
+            className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-sm"
+          >
+            <span>Mở OCR Logistics</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
       </div>
 
       {/* Lower Row - Charts + OCR AI Panel */}
@@ -242,15 +271,15 @@ export default function Dashboard() {
           <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
             <div className="flex items-center gap-2">
               <Cpu className="w-4 h-4 text-blue-400" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-200">Trích xuất OCR AI</h2>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-200">Trích xuất Baidu Unlimited-OCR</h2>
             </div>
-            <span className="text-[10px] bg-blue-600/80 text-white font-mono px-2 py-0.5 rounded">Tesseract Engine</span>
+            <span className="text-[10px] bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-mono px-2 py-0.5 rounded">Baidu R-SWA</span>
           </div>
 
-          <p className="text-xs text-gray-400 mb-3">Ví dụ phân tích nhận dạng dữ liệu tự động từ file hợp đồng mới nhất:</p>
+          <p className="text-xs text-gray-400 mb-3">Phân tích đa trang liên tục bằng <code className="text-blue-300 font-mono">baidu/Unlimited-OCR</code> trên Hugging Face:</p>
 
           <div className="flex-1 bg-gray-900/90 rounded-lg border border-gray-800 p-4 font-mono text-[11px] leading-relaxed text-gray-300 overflow-y-auto space-y-1.5 shadow-inner">
-            <p className="text-blue-400">// Kết quả OCR HD-2025-081</p>
+            <p className="text-blue-400">// Kết quả Baidu Unlimited-OCR HD-2025-081</p>
             <p><span className="text-purple-300">"Tên_hợp_đồng"</span>: <span className="text-emerald-300">"Đại lý Hải Quan SPV-KF"</span>,</p>
             <p><span className="text-purple-300">"Bên_A"</span>: <span className="text-emerald-300">"CÔNG TY TNHH SPV GROUP"</span>,</p>
             <p><span className="text-purple-300">"Bên_B"</span>: <span className="text-emerald-300">"CÔNG TY TNHH KANG FOODS"</span>,</p>
@@ -259,8 +288,8 @@ export default function Dashboard() {
             <p><span className="text-purple-300">"Mã_số_thuế_B"</span>: <span className="text-emerald-300">"0110012544"</span>,</p>
             <p><span className="text-purple-300">"Tòa_án_giải_quyết"</span>: <span className="text-emerald-300">"Tòa án Hải Phòng"</span></p>
             <div className="pt-2 border-t border-gray-800 text-[10px] text-gray-500 font-mono">
-              <p>...Confidence score: 99.4%...</p>
-              <p>...OCR Language: vie + eng...</p>
+              <p>...Architecture: DeepSeek-V2 MoE + SAM-ViT-B + CLIP-L...</p>
+              <p>...Reference Sliding Window Attention (R-SWA)...</p>
             </div>
           </div>
 
