@@ -41,6 +41,8 @@ export default function ExpertOCRModal({
 
   const [file, setFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string>('');
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string>('application/pdf');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressPct, setProgressPct] = useState(0);
   const [progressMsg, setProgressMsg] = useState('');
@@ -73,6 +75,7 @@ export default function ExpertOCRModal({
   const processFile = async (fileObj: File) => {
     setFile(fileObj);
     setFileName(fileObj.name);
+    setFileType(fileObj.type || 'application/pdf');
     setIsProcessing(true);
     setExtractedData(null);
     setRawJson('');
@@ -80,6 +83,19 @@ export default function ExpertOCRModal({
     setSaveSuccess(false);
     setProgressPct(5);
     setProgressMsg('Đang nạp tài liệu vào bộ phân giải OCR Chuyên gia...');
+
+    // Read file as base64 data URL for preview and storage
+    try {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setFileUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(fileObj);
+    } catch (e) {
+      console.warn('Could not read file preview data', e);
+    }
 
     try {
       const result = await runExpertContractOCR(
@@ -139,6 +155,8 @@ CÔNG TY TNHH SPV GROUP                              CÔNG TY CP NÔNG SẢN & T
 
     setIsProcessing(true);
     setFileName('Hop_dong_kinh_te_SPV_KangFoods_2026.pdf');
+    setFileType('text/plain');
+    setFileUrl(null);
     setProgressPct(20);
     setProgressMsg('Đang nạp hợp đồng kinh tế mẫu thực tế...');
 
@@ -192,6 +210,10 @@ CÔNG TY TNHH SPV GROUP                              CÔNG TY CP NÔNG SẢN & T
         action_note: `Tự động trích xuất qua Chuyên gia OCR (${fileName || 'Tài liệu'})`,
         ocr_content: ocrText || rawJson,
         ocr_engine: 'gemini-expert-ocr',
+        file_url: fileUrl || null,
+        file_name: fileName || null,
+        file_type: fileType || null,
+        file_id: `gdrive_${Date.now().toString(36)}`,
       });
 
       setSaveSuccess(true);
@@ -220,6 +242,9 @@ CÔNG TY TNHH SPV GROUP                              CÔNG TY CP NÔNG SẢN & T
           effective_date: extractedData.effective_date || '',
           expiration_date: extractedData.expiry_date || '',
           ocr_content: ocrText || rawJson,
+          file_url: fileUrl || null,
+          file_name: fileName || null,
+          file_type: fileType || null,
         },
       },
     });
