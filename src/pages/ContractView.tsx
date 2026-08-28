@@ -5,7 +5,7 @@ import {
   upsertContract, 
   pauseContract, 
   extendContract, 
-  replaceContract,
+  replaceContract, 
   shouldAlertContract,
   SIGNING_METHODS 
 } from '../lib/contractsService';
@@ -38,6 +38,7 @@ import {
 import { Contract, SigningMethod } from '../types';
 import { format, addYears, parseISO } from 'date-fns';
 import { ACTIVE_GOOGLE_DRIVE_EMAIL } from '../lib/drive';
+import ContractDocumentViewer from '../components/ContractDocumentViewer';
 
 export default function ContractView() {
   const { id } = useParams<{ id: string }>();
@@ -299,90 +300,11 @@ export default function ContractView() {
         </div>
       </div>
 
-      {/* Grid Layout: Left Google Drive Direct Viewer, Right Info Panel */}
+      {/* Grid Layout: Left Google Drive / Original File Direct Viewer, Right Info Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Google Drive Document Viewer Area */}
-        <div className="lg:col-span-7 bg-white rounded-2xl border border-gray-200 shadow-2xs flex flex-col min-h-[600px] overflow-hidden">
-          <div className="p-3.5 border-b border-gray-100 bg-gray-50/70 flex items-center justify-between text-xs text-gray-600">
-            <div className="flex items-center space-x-2">
-              <HardDrive className="w-4 h-4 text-blue-600" />
-              <span className="font-semibold text-slate-800">
-                {contract.file_name ? `Tệp đã tải lên: ${contract.file_name}` : 'Tài liệu Google Drive'}
-              </span>
-            </div>
-            {driveDirectLink && (
-              <a
-                href={driveDirectLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Xem trên Google Drive</span>
-              </a>
-            )}
-          </div>
-
-          <div className="flex-1 bg-slate-100/80 p-4 flex flex-col justify-center items-center overflow-auto min-h-[550px]">
-            {contract.file_type?.startsWith('image/') || (contract.file_url && contract.file_url.startsWith('data:image/')) ? (
-              <div className="bg-white p-2 rounded-xl shadow-md border border-slate-200 max-w-full">
-                <img 
-                  src={contract.file_url!} 
-                  alt={contract.file_name || 'Hợp đồng'} 
-                  className="max-h-[650px] object-contain rounded-lg mx-auto" 
-                />
-              </div>
-            ) : drivePreviewLink ? (
-              <div className="w-full h-full min-h-[560px] bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden flex flex-col">
-                <iframe
-                  src={drivePreviewLink}
-                  title="Google Drive Document Preview"
-                  className="w-full flex-1 border-0 rounded-xl"
-                  allow="autoplay"
-                />
-              </div>
-            ) : driveDirectLink ? (
-              <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-md border border-slate-200 text-center space-y-4">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto shadow-2xs">
-                  <FileCheck2 className="w-7 h-7" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900">{contract.file_name || contract.title}</h3>
-                  <p className="text-xs text-gray-500 mt-1">Tệp đã được lưu trữ an toàn trên Google Drive ({ACTIVE_GOOGLE_DRIVE_EMAIL})</p>
-                </div>
-                <div className="pt-2">
-                  <a
-                    href={driveDirectLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
-                  >
-                    <Eye className="w-4 h-4" />
-                    <span>Mở xem trực tiếp trên Google Drive</span>
-                  </a>
-                </div>
-              </div>
-            ) : (
-              /* Fallback digital summary presentation */
-              <div className="w-full max-w-lg bg-white p-8 rounded-2xl shadow-md border border-slate-200 space-y-4 text-xs text-slate-800 leading-relaxed">
-                <div className="text-center border-b pb-4 border-slate-200 space-y-1">
-                  <p className="font-bold uppercase text-slate-500 tracking-wider text-[10px]">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
-                  <p className="font-semibold text-[10px] text-slate-400">Độc lập - Tự do - Hạnh phúc</p>
-                  <h2 className="text-base font-bold text-slate-900 mt-3 uppercase">{contract.title}</h2>
-                  <p className="font-mono text-xs text-blue-700 font-bold">Số: {contract.contract_number}</p>
-                </div>
-                <div className="space-y-2 text-slate-700">
-                  <p><b>Phân loại:</b> {contract.category} ({contract.contract_type})</p>
-                  <p><b>Khách Hàng / Nhà Cung Cấp:</b> {contract.party_b}</p>
-                  <p><b>Mã số thuế:</b> {contract.tax_code || 'Chưa cung cấp'}</p>
-                  <p><b>Hình thức ký:</b> {contract.signing_method || 'Ký điện tử'}</p>
-                  <p><b>Ngày ký:</b> {contract.sign_date || '-'}</p>
-                  <p><b>Hiệu lực HĐ:</b> {contract.effective_date || '-'}</p>
-                  <p><b>Ngày hết hạn:</b> {contract.expiration_date || '-'}</p>
-                </div>
-              </div>
-            )}
-          </div>
+        {/* Google Drive & Original Document Viewer Area */}
+        <div className="lg:col-span-7 flex flex-col">
+          <ContractDocumentViewer contract={contract} onRunOCR={handleOcrScan} />
         </div>
 
         {/* Sidebar details & OCR Output */}

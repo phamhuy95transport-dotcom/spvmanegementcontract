@@ -67,6 +67,9 @@ export default function ContractForm() {
       effective_date: prefill?.effective_date || '',
       expiration_date: prefill?.expiration_date || '',
       ocr_content: prefill?.ocr_content || '',
+      file_url: prefill?.file_url || null,
+      file_name: prefill?.file_name || null,
+      file_type: prefill?.file_type || null,
     };
   });
 
@@ -120,6 +123,9 @@ export default function ContractForm() {
         expiration_date: existing.expiration_date || '',
         manual_status: existing.manual_status || null,
         file_id: existing.file_id || null,
+        file_url: existing.file_url || null,
+        file_name: existing.file_name || null,
+        file_type: existing.file_type || null,
         ocr_content: existing.ocr_content || '',
       });
 
@@ -632,6 +638,13 @@ export default function ContractForm() {
                     <div className="mt-3 flex items-center justify-center text-xs font-semibold text-emerald-700 bg-emerald-50 py-2 px-4 rounded-xl border border-emerald-200 inline-flex gap-2 shadow-2xs">
                       <FileIcon className="w-4 h-4 text-emerald-600" />
                       <span>Tệp đã chọn: <b>{file.name}</b></span>
+                    </div>
+                  )}
+
+                  {!isOcrProcessing && !file && formData.file_name && (
+                    <div className="mt-3 flex items-center justify-center text-xs font-semibold text-blue-800 bg-blue-50 py-2.5 px-4 rounded-xl border border-blue-200 inline-flex gap-2 shadow-2xs">
+                      <FileIcon className="w-4 h-4 text-blue-600" />
+                      <span>Tệp gốc hiện tại: <b>{formData.file_name}</b> (Giữ nguyên hoặc chọn tệp mới bên trên để thay thế)</span>
                     </div>
                   )}
                 </div>
