@@ -1,6 +1,6 @@
 {
   "name": "Remix CÔNG TY TNHH SPV GROUP - Quản lý hợp đồng",
-  "description": "Website quản lý hợp đồng, tạo lập, chỉnh sửa, lưu trữ, phân tích OCR Logistics Vận đơn gom hàng (House B/L) và thống kê hợp đồng.",
+  "description": "Website quản lý hợp đồng chuyên nghiệp, theo dõi hiệu lực tự động, trích xuất Unlimited-OCR và lưu trữ trực tiếp qua Google Drive.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
