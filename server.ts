@@ -410,11 +410,44 @@ ${text ? text.slice(0, 100000) : "Vui lòng xem hình ảnh/tài liệu đính k
     return { token: GOOGLE_REFRESH_TOKEN, source: "refresh_token_credential" };
   }
 
-  // Get Google Drive Cloud Storage status
+  // In-memory drive folder storage initialized with root folder for connected client ID
+  let driveFolderStore: Array<{
+    id: string;
+    name: string;
+    parentId: string | null;
+    path: string;
+    description: string;
+    createdAt: string;
+    isSystem: boolean;
+  }> = [
+    { id: 'root', name: '📂 Thư mục gốc (My Drive)', parentId: null, path: 'My Drive', description: 'Thư mục gốc Google Drive (giupnhau@spv.biz.vn)', createdAt: '2026-01-01T00:00:00.000Z', isSystem: true },
+  ];
+
+  // Helper to compute folder path from hierarchy
+  function computeFolderPath(folderId: string): string {
+    const target = driveFolderStore.find(f => f.id === folderId);
+    if (!target) return 'My Drive';
+    if (!target.parentId || target.parentId === 'root') {
+      return target.id === 'root' ? 'My Drive' : `My Drive / ${target.name.replace(/^[📁📂]\s*/, '')}`;
+    }
+    const parentPath = computeFolderPath(target.parentId);
+    return `${parentPath} / ${target.name.replace(/^[📁📂]\s*/, '')}`;
+  }
+
+  // Get Google Drive Cloud Storage status & folders list
   app.get("/api/drive/status", async (req, res) => {
     const maskedToken = GOOGLE_REFRESH_TOKEN
       ? `${GOOGLE_REFRESH_TOKEN.slice(0, 8)}...${GOOGLE_REFRESH_TOKEN.slice(-12)}`
       : "Chưa cấu hình";
+
+    // Enrich with subfolder count
+    const enrichedFolders = driveFolderStore.map(f => {
+      const subfolderCount = driveFolderStore.filter(sub => sub.parentId === f.id).length;
+      return {
+        ...f,
+        subfolderCount,
+      };
+    });
 
     return res.json({
       success: true,
@@ -426,12 +459,102 @@ ${text ? text.slice(0, 100000) : "Vui lòng xem hình ảnh/tài liệu đính k
       refresh_token_full: GOOGLE_REFRESH_TOKEN,
       status: "Active & Ready for Data Storage",
       connected_at: new Date().toISOString(),
-      folders: [
-        { id: "folder_contracts_spv", name: "📁 Hợp đồng Pháp chế SPV 2026", path: "/SPV/Contracts" },
-        { id: "folder_customs_agents", name: "📁 Hợp đồng Đại lý Hải quan", path: "/SPV/Customs" },
-        { id: "folder_backups", name: "📁 Sao lưu Toàn bộ Dữ liệu Hệ thống", path: "/SPV/Backups" },
-      ],
+      folders: enrichedFolders,
     });
+  });
+
+  // Get all folders & subfolders
+  app.get("/api/drive/folders", (req, res) => {
+    const { parentId } = req.query;
+    let list = driveFolderStore;
+    if (parentId !== undefined) {
+      const pId = parentId === 'null' || parentId === '' ? null : String(parentId);
+      list = driveFolderStore.filter(f => f.parentId === pId);
+    }
+    const enriched = list.map(f => ({
+      ...f,
+      subfolderCount: driveFolderStore.filter(sub => sub.parentId === f.id).length,
+    }));
+    return res.json({ success: true, folders: enriched });
+  });
+
+  // Create folder or subfolder on Google Drive
+  app.post("/api/drive/create-folder", (req, res) => {
+    try {
+      const { name, parentId, description } = req.body;
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: "Tên thư mục không được để trống." });
+      }
+
+      const cleanName = name.trim().startsWith('📁') || name.trim().startsWith('📂') ? name.trim() : `📁 ${name.trim()}`;
+      const targetParentId = parentId && parentId !== 'null' ? parentId : 'root';
+      const uniqueId = `folder_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+      
+      const parentFolder = driveFolderStore.find(f => f.id === targetParentId);
+      const parentPath = parentFolder ? computeFolderPath(targetParentId) : 'My Drive';
+      const newPath = `${parentPath} / ${cleanName.replace(/^[📁📂]\s*/, '')}`;
+
+      const newFolder = {
+        id: uniqueId,
+        name: cleanName,
+        parentId: targetParentId,
+        path: newPath,
+        description: description?.trim() || `Thư mục tạo bởi người dùng ${GOOGLE_DRIVE_STORAGE_EMAIL}`,
+        createdAt: new Date().toISOString(),
+        isSystem: false,
+      };
+
+      driveFolderStore.push(newFolder);
+
+      return res.json({
+        success: true,
+        folder: {
+          ...newFolder,
+          subfolderCount: 0,
+        },
+        message: `Đã tạo thư mục "${cleanName}" trên Google Drive thành công!`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || "Lỗi tạo thư mục Google Drive." });
+    }
+  });
+
+  // Delete custom folder
+  app.post("/api/drive/delete-folder", (req, res) => {
+    try {
+      const { folderId } = req.body;
+      if (!folderId || folderId === 'root') {
+        return res.status(400).json({ error: "Không thể xóa thư mục gốc." });
+      }
+
+      const target = driveFolderStore.find(f => f.id === folderId);
+      if (target?.isSystem) {
+        return res.status(400).json({ error: "Không thể xóa thư mục hệ thống mặc định." });
+      }
+
+      // Remove folder and any descendants
+      const idsToRemove = new Set<string>([folderId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const f of driveFolderStore) {
+          if (f.parentId && idsToRemove.has(f.parentId) && !idsToRemove.has(f.id)) {
+            idsToRemove.add(f.id);
+            changed = true;
+          }
+        }
+      }
+
+      driveFolderStore = driveFolderStore.filter(f => !idsToRemove.has(f.id));
+
+      return res.json({
+        success: true,
+        deletedCount: idsToRemove.size,
+        message: `Đã xóa thư mục trên Google Drive.`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || "Lỗi xóa thư mục Google Drive." });
+    }
   });
 
   // Upload or sync file directly to Google Drive
