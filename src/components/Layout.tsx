@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, PlusCircle, Settings, HardDrive, Database, Search, Sparkles, FileSignature, Ship } from 'lucide-react';
+import { LayoutDashboard, FileText, PlusCircle, Settings, HardDrive, Database, Search, Sparkles, FileSignature } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import GoogleDriveAccountModal from './GoogleDriveAccountModal';
@@ -16,12 +16,18 @@ export default function Layout() {
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [driveAccount, setDriveAccount] = useState(getConnectedDriveAccount());
 
-  const navItems = [
+  interface NavItem {
+    name: string;
+    path: string;
+    icon: React.ComponentType<{ className?: string }>;
+    highlight?: boolean;
+  }
+
+  const navItems: NavItem[] = [
     { name: 'Bảng điều khiển', path: '/', icon: LayoutDashboard },
-    { name: 'OCR Logistics (House B/L)', path: '/logistics-ocr', icon: Ship, highlight: true },
-    { name: 'Soạn hợp đồng thông minh', path: '/smart-editor', icon: FileSignature },
-    { name: 'Thêm hợp đồng', path: '/contracts/new', icon: PlusCircle },
     { name: 'Danh sách hợp đồng', path: '/contracts', icon: FileText },
+    { name: 'Thêm hợp đồng mới', path: '/contracts/new', icon: PlusCircle },
+    { name: 'Soạn hợp đồng thông minh', path: '/smart-editor', icon: FileSignature },
   ];
 
   return (
