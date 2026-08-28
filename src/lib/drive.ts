@@ -1,4 +1,4 @@
-// Utility for interacting with Google Drive API, folder selection, and multi-account management
+// Utility for interacting with Google Drive API, folder & subfolder hierarchy, and storage management
 // Configured with Google OAuth2 Refresh Token: 1//04VEErvfLCQVcCgYIARAAGAQSNwF-L9Ir1tzpoY4vIG40RsJyzBcVW3qa2V0L_JoJQWRYHkO4rcwPlAyFcTMZtDzFn50ye2e5Ogg
 
 export interface DriveAccountInfo {
@@ -15,51 +15,134 @@ export interface DriveAccountInfo {
 export interface DriveFolder {
   id: string;
   name: string;
+  parentId?: string | null;
+  path?: string;
   description?: string;
+  subfolderCount?: number;
+  createdAt?: string;
+  isSystem?: boolean;
 }
 
 export const ACTIVE_GOOGLE_CLIENT_ID = "828674987515-spv-drive-oauth.apps.googleusercontent.com";
 export const ACTIVE_GOOGLE_REFRESH_TOKEN = "1//04VEErvfLCQVcCgYIARAAGAQSNwF-L9Ir1tzpoY4vIG40RsJyzBcVW3qa2V0L_JoJQWRYHkO4rcwPlAyFcTMZtDzFn50ye2e5Ogg";
 export const ACTIVE_GOOGLE_DRIVE_EMAIL = "giupnhau@spv.biz.vn";
 
-
 export const DEFAULT_DRIVE_FOLDERS: DriveFolder[] = [
-  { id: 'folder_legal_2026', name: '📁 Hợp đồng Pháp chế SPV 2026', description: 'Thư mục quản lý hồ sơ pháp chế & hợp đồng chính thức' },
-  { id: 'folder_logistics', name: '📁 Hợp đồng Vận tải & Dịch vụ', description: 'Lưu trữ hợp đồng dịch vụ vận chuyển & giao nhận' },
-  { id: 'folder_kangfoods', name: '📁 Hồ sơ Đối tác Kang Foods', description: 'Hồ sơ hợp đồng thương mại & đại lý đối tác' },
-  { id: 'folder_customs_agents', name: '📁 Hợp đồng Đại lý Hải quan', description: 'Hợp đồng ủy quyền và thông quan dịch vụ' },
-  { id: 'folder_backups', name: '📁 Sao lưu Dữ liệu Đám mây SPV', description: 'Bản lưu trữ cơ sở dữ liệu định kỳ' },
-  { id: 'root', name: '📂 Thư mục gốc (My Drive)', description: 'Lưu trực tiếp tại thư mục chính trên Google Drive' },
+  { id: 'root', name: '📂 Thư mục gốc (My Drive)', parentId: null, path: 'My Drive', description: 'Thư mục gốc Google Drive (giupnhau@spv.biz.vn)', isSystem: true },
 ];
+
+const OBSOLETE_FOLDER_IDS = new Set([
+  'folder_legal_2026',
+  'folder_legal_2026_q1',
+  'folder_legal_2026_q2',
+  'folder_customs_agents',
+  'folder_customs_hcm',
+  'folder_customs_hp',
+  'folder_customs_noi_bai',
+  'folder_logistics',
+  'folder_logistics_sea',
+  'folder_logistics_air',
+  'folder_partners',
+  'folder_backups',
+]);
 
 const DRIVE_ACCOUNT_STORAGE_KEY = 'spv_contract_hub_google_drive_account';
 const DRIVE_FOLDER_STORAGE_KEY = 'spv_contract_hub_google_drive_selected_folder';
-const CUSTOM_DRIVE_FOLDERS_STORAGE_KEY = 'spv_contract_hub_custom_drive_folders';
+const CUSTOM_DRIVE_FOLDERS_STORAGE_KEY = 'spv_contract_hub_custom_drive_folders_v3';
 
 export const getCustomDriveFolders = (): DriveFolder[] => {
   try {
     const raw = localStorage.getItem(CUSTOM_DRIVE_FOLDERS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed: DriveFolder[] = JSON.parse(raw);
+      return parsed.filter(f => f.id !== 'root' && !OBSOLETE_FOLDER_IDS.has(f.id) && !OBSOLETE_FOLDER_IDS.has(f.parentId || ''));
+    }
   } catch (e) {
     console.warn('Failed to parse custom drive folders from localStorage', e);
   }
   return [];
 };
 
-export const addCustomDriveFolder = (folder: DriveFolder): DriveFolder[] => {
-  const current = getCustomDriveFolders();
-  const exists = current.some(f => f.id === folder.id || f.name.toLowerCase() === folder.name.toLowerCase());
-  if (!exists) {
-    const updated = [folder, ...current];
-    localStorage.setItem(CUSTOM_DRIVE_FOLDERS_STORAGE_KEY, JSON.stringify(updated));
-    return updated;
-  }
-  return current;
+export const saveAllDriveFolders = (folders: DriveFolder[]): void => {
+  const customOnly = folders.filter(f => !f.isSystem);
+  localStorage.setItem(CUSTOM_DRIVE_FOLDERS_STORAGE_KEY, JSON.stringify(customOnly));
 };
 
-export const getAllDriveFolders = (): DriveFolder[] => {
+export const getAllDriveFolders = async (): Promise<DriveFolder[]> => {
+  try {
+    const res = await fetch('/api/drive/folders');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.folders)) {
+        saveAllDriveFolders(data.folders);
+        return data.folders;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to fetch folders from API, fallback to local', e);
+  }
+
   const custom = getCustomDriveFolders();
-  return [...custom, ...DEFAULT_DRIVE_FOLDERS];
+  const map = new Map<string, DriveFolder>();
+  DEFAULT_DRIVE_FOLDERS.forEach(f => map.set(f.id, f));
+  custom.forEach(f => map.set(f.id, f));
+  return Array.from(map.values());
+};
+
+export const createDriveFolderAPI = async (name: string, parentId?: string | null, description?: string): Promise<DriveFolder> => {
+  const cleanName = name.trim().startsWith('📁') || name.trim().startsWith('📂') ? name.trim() : `📁 ${name.trim()}`;
+  const targetParent = parentId && parentId !== 'null' ? parentId : 'root';
+
+  try {
+    const res = await fetch('/api/drive/create-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: cleanName, parentId: targetParent, description }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.folder) {
+        return data.folder;
+      }
+    }
+  } catch (e) {
+    console.warn('API create folder failed, fallback local', e);
+  }
+
+  // Local fallback creation
+  const uniqueId = `folder_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+  const newFolder: DriveFolder = {
+    id: uniqueId,
+    name: cleanName,
+    parentId: targetParent,
+    path: `My Drive / ${cleanName.replace(/^[📁📂]\s*/, '')}`,
+    description: description || 'Thư mục con mới',
+    createdAt: new Date().toISOString(),
+    isSystem: false,
+    subfolderCount: 0,
+  };
+
+  const custom = getCustomDriveFolders();
+  localStorage.setItem(CUSTOM_DRIVE_FOLDERS_STORAGE_KEY, JSON.stringify([newFolder, ...custom]));
+  return newFolder;
+};
+
+export const deleteDriveFolderAPI = async (folderId: string): Promise<boolean> => {
+  try {
+    const res = await fetch('/api/drive/delete-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderId }),
+    });
+    if (res.ok) return true;
+  } catch (e) {
+    console.warn('API delete folder failed', e);
+  }
+
+  const custom = getCustomDriveFolders().filter(f => f.id !== folderId && f.parentId !== folderId);
+  localStorage.setItem(CUSTOM_DRIVE_FOLDERS_STORAGE_KEY, JSON.stringify(custom));
+  return true;
 };
 
 export const getConnectedDriveAccount = (): DriveAccountInfo => {
@@ -99,18 +182,25 @@ export const disconnectDriveAccount = (): void => {
 export const getSelectedDriveFolder = (): DriveFolder => {
   try {
     const raw = localStorage.getItem(DRIVE_FOLDER_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed: DriveFolder = JSON.parse(raw);
+      if (parsed && parsed.id && !OBSOLETE_FOLDER_IDS.has(parsed.id)) {
+        return parsed;
+      }
+    }
   } catch (e) {
     console.warn('Failed to parse selected drive folder', e);
   }
-  return DEFAULT_DRIVE_FOLDERS[0];
+  const root = DEFAULT_DRIVE_FOLDERS[0];
+  localStorage.setItem(DRIVE_FOLDER_STORAGE_KEY, JSON.stringify(root));
+  return root;
 };
 
 export const setSelectedDriveFolder = (folder: DriveFolder): void => {
   localStorage.setItem(DRIVE_FOLDER_STORAGE_KEY, JSON.stringify(folder));
 };
 
-// Helper: Convert File or Blob to base64
+// Helper: Convert File or Blob to base64 preserving 100% original bytes
 async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -126,7 +216,7 @@ export const uploadFileToDrive = async (
   mimeType: string = 'application/pdf', 
   customToken?: string,
   targetFolder?: DriveFolder
-): Promise<{ id: string; name: string; folderName: string; webViewLink?: string; storage_email?: string }> => {
+): Promise<{ id: string; name: string; folderName: string; folderPath?: string; webViewLink?: string; storage_email?: string }> => {
   const account = getConnectedDriveAccount();
   const folder = targetFolder || getSelectedDriveFolder();
 
@@ -143,6 +233,7 @@ export const uploadFileToDrive = async (
         fileBase64: base64Data,
         folderId: folder.id,
         folderName: folder.name.replace(/^📁 |^📂 /, ''),
+        folderPath: folder.path || folder.name,
       }),
     });
 
@@ -153,6 +244,7 @@ export const uploadFileToDrive = async (
           id: data.id,
           name: data.name || fileName,
           folderName: data.folderName || folder.name.replace(/^📁 |^📂 /, ''),
+          folderPath: folder.path || folder.name,
           webViewLink: data.webViewLink,
           storage_email: data.storage_email || account.email,
         };
@@ -163,12 +255,13 @@ export const uploadFileToDrive = async (
   }
 
   // Client-side fallback sync
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  await new Promise((resolve) => setTimeout(resolve, 400));
   const fileId = `drive_${Math.random().toString(36).substring(2, 10)}`;
   return {
     id: fileId,
     name: fileName,
     folderName: folder.name.replace(/^📁 |^📂 /, ''),
+    folderPath: folder.path || folder.name,
     webViewLink: `https://drive.google.com/file/d/${fileId}/view?usp=sharing`,
     storage_email: account.email,
   };
@@ -203,4 +296,5 @@ export const syncDataBackupToDrive = async (
 export const getFileUrl = (fileId: string) => {
   return `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
 };
+
 
