@@ -246,6 +246,160 @@ ${text ? `Văn bản thô cần phục hồi cấu trúc Markdown:\n"""\n${text}
     }
   });
 
+  // Endpoint for Expert OCR & Contract Data Extraction (Strict Schema, Partner Isolation, 100% Accuracy)
+  app.post("/api/expert-ocr-extract", async (req, res) => {
+    try {
+      const { text, fileBase64, mimeType, fileName } = req.body;
+
+      if (!text && !fileBase64) {
+        return res.status(400).json({ error: "Vui lòng cung cấp nội dung văn bản hoặc dữ liệu tệp đính kèm để trích xuất." });
+      }
+
+      const promptExpert = `Bạn là Chuyên gia OCR và Trích xuất dữ liệu chứng từ, hợp đồng kinh tế có độ chính xác tuyệt đối.
+
+### NHIỆM VỤ:
+Phân tích hình ảnh/tài liệu hợp đồng được cung cấp và trích xuất các trường thông tin cụ thể của Đối tác (Khách hàng hoặc Nhà cung cấp), loại trừ hoàn toàn thông tin của SPV Group.
+
+### SCHEMA DỮ LIỆU ĐẦU RA:
+Trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc sau:
+{
+  "contract_number": "string | null",
+  "partner_name": "string | null",
+  "partner_tax_code": "string | null",
+  "signed_date": "YYYY-MM-DD | null",
+  "effective_date": "YYYY-MM-DD | null",
+  "expiry_date": "YYYY-MM-DD | null"
+}
+
+### QUY TẮC BÓC TÁCH DỮ LIỆU:
+
+1. QUY TẮC ĐỐI TÁC (QUAN TRỌNG):
+   - "partner_name": Tên đầy đủ của Khách hàng / Nhà cung cấp / Bên B (hoặc Bên đối ứng ký hợp đồng với SPV Group). TUYỆT ĐỐI KHÔNG lấy tên công ty SPV Group (như CÔNG TY TNHH SPV GROUP, SPV LOGISTICS, SPV GROUP).
+   - "partner_tax_code": Mã số thuế của bên Đối tác nói trên. TUYỆT ĐỐI KHÔNG lấy mã số thuế của SPV Group.
+
+2. CÁC TRƯỜNG THÔNG TIN KHÁC:
+   - "contract_number": Số hợp đồng/Số thỏa thuận nguyên văn như trên tiêu đề hoặc đầu trang (ví dụ: "01/2026/HĐKT-SPV", "SPV-KF/2026-08").
+   - "signed_date": Ngày ký hợp đồng (thường ở đầu hợp đồng hoặc phần chữ ký cuối trang).
+   - "effective_date": Ngày hợp đồng bắt đầu có hiệu lực thi hành. Nếu hợp đồng ghi "có hiệu lực kể từ ngày ký", hãy lấy giá trị trùng với signed_date.
+   - "expiry_date": Ngày hết hạn hiệu lực của hợp đồng (hoặc ngày chấm dứt thực hiện).
+
+3. ĐỊNH DẠNG VÀ CHUẨN HÓA:
+   - Toàn bộ các trường ngày tháng ("signed_date", "effective_date", "expiry_date") bắt buộc quy đổi về định dạng chuẩn ISO: "YYYY-MM-DD".
+   - Nếu tài liệu không ghi rõ thời hạn kết thúc (ví dụ: "vô thời hạn" hoặc "cho đến khi hoàn thành nghĩa vụ") hoặc bị mờ/thiếu thông tin, gán giá trị là null.
+   - Giữ nguyên độ chính xác của ký tự (viết hoa, dấu gạch ngang, dấu xuyệt) ở trường "contract_number" và "partner_tax_code".
+
+4. ĐẦU RA BẮT BUỘC:
+   - Chỉ trả về chuỗi JSON thuần túy. Không giải thích, không kèm thẻ markdown ngoài dữ liệu.
+
+${text ? `Văn bản hợp đồng đính kèm:\n"""\n${text}\n"""` : ''}
+`;
+
+      const contents: any[] = [];
+      if (fileBase64) {
+        contents.push({
+          inlineData: {
+            mimeType: mimeType || "image/png",
+            data: fileBase64.includes(",") ? fileBase64.split(",")[1] : fileBase64,
+          },
+        });
+      }
+      contents.push(promptExpert);
+
+      let extractedResult: {
+        contract_number: string | null;
+        partner_name: string | null;
+        partner_tax_code: string | null;
+        signed_date: string | null;
+        effective_date: string | null;
+        expiry_date: string | null;
+      } = {
+        contract_number: null,
+        partner_name: null,
+        partner_tax_code: null,
+        signed_date: null,
+        effective_date: null,
+        expiry_date: null,
+      };
+
+      if (ai) {
+        const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        for (const modelName of modelsToTry) {
+          try {
+            const resp = await ai.models.generateContent({
+              model: modelName,
+              contents: contents,
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    contract_number: { type: Type.STRING },
+                    partner_name: { type: Type.STRING },
+                    partner_tax_code: { type: Type.STRING },
+                    signed_date: { type: Type.STRING },
+                    effective_date: { type: Type.STRING },
+                    expiry_date: { type: Type.STRING },
+                  },
+                },
+              },
+            });
+
+            if (resp && resp.text) {
+              const cleanText = resp.text.trim().replace(/^```json\s*/i, "").replace(/\s*```$/i, "");
+              const parsed = JSON.parse(cleanText);
+              extractedResult = {
+                contract_number: parsed.contract_number ? String(parsed.contract_number).trim() : null,
+                partner_name: parsed.partner_name ? String(parsed.partner_name).trim() : null,
+                partner_tax_code: parsed.partner_tax_code ? String(parsed.partner_tax_code).trim() : null,
+                signed_date: parsed.signed_date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.signed_date) ? parsed.signed_date : null,
+                effective_date: parsed.effective_date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.effective_date) ? parsed.effective_date : null,
+                expiry_date: parsed.expiry_date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.expiry_date) ? parsed.expiry_date : null,
+              };
+              break;
+            }
+          } catch (mErr: any) {
+            console.warn(`Model ${modelName} error in /api/expert-ocr-extract:`, mErr?.message);
+          }
+        }
+      }
+
+      // Strict post-filter for SPV Group exclusion
+      if (extractedResult.partner_name) {
+        const lowerPartner = extractedResult.partner_name.toLowerCase();
+        if (
+          lowerPartner.includes("spv group") ||
+          lowerPartner.includes("công ty tnhh spv") ||
+          lowerPartner === "spv" ||
+          lowerPartner.includes("super port vietnam")
+        ) {
+          extractedResult.partner_name = null;
+        }
+      }
+
+      const rawJsonOutput = JSON.stringify(extractedResult, null, 2);
+
+      return res.json({
+        success: true,
+        data: extractedResult,
+        raw_json: rawJsonOutput,
+        schema: {
+          contract_number: "string | null",
+          partner_name: "string | null",
+          partner_tax_code: "string | null",
+          signed_date: "YYYY-MM-DD | null",
+          effective_date: "YYYY-MM-DD | null",
+          expiry_date: "YYYY-MM-DD | null",
+        },
+      });
+    } catch (err: any) {
+      console.error("Expert OCR extraction error:", err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "Lỗi xử lý OCR chuyên gia",
+      });
+    }
+  });
+
   // Endpoint for OCR contract document scanning & field extraction into form fields (Unlimited-OCR Pipeline)
   app.post("/api/extract-contract-data", async (req, res) => {
     try {
@@ -263,24 +417,25 @@ ${text ? `Văn bản thô cần phục hồi cấu trúc Markdown:\n"""\n${text}
         });
       }
 
-      const promptText = `Bạn là hệ thống trích xuất dữ liệu và số hóa hợp đồng chuyên sâu, tích hợp công nghệ Baidu Unlimited-OCR (https://huggingface.co/baidu/Unlimited-OCR) với cơ chế Attention Cửa sổ Trượt Tham chiếu (R-SWA) đọc tài liệu đa trang.
-Hãy phân tích tài liệu hợp đồng ${fileName ? `"${fileName}"` : ''} bên dưới và trích xuất chính xác 100% các ô thông tin để điền vào hệ thống quản lý hợp đồng.
+      const promptText = `Bạn là Chuyên gia OCR và Trích xuất dữ liệu chứng từ, hợp đồng kinh tế có độ chính xác tuyệt đối.
 
-Định dạng trả về JSON với các trường dữ liệu bắt buộc:
-1. "contract_number": Mã số/Số hợp đồng (Ví dụ: "HD-2025/SPV-081", "12/2025/HĐ-HQ").
-2. "title": Tên đầy đủ của hợp đồng (Ví dụ: "Hợp đồng đại lý Hải Quan và Giao nhận hàng hóa").
-3. "party_a": Tên công ty/chủ thể Bên A (Ví dụ: "CÔNG TY TNHH SPV GROUP").
-4. "party_b": Tên công ty/đối tác Bên B (Ví dụ: "CÔNG TY TNHH KANG FOODS").
-5. "party_b_tax": Mã số thuế Bên B nếu tìm thấy (Ví dụ: "0110012544").
-6. "party_b_address": Địa chỉ Bên B nếu tìm thấy.
-7. "party_b_represent": Người đại diện Bên B nếu tìm thấy.
-8. "party_b_position": Chức vụ người đại diện Bên B nếu tìm thấy.
-9. "value": Tổng giá trị hợp đồng bằng số nguyên VNĐ (chỉ lấy chữ số, ví dụ 1200000000 nếu là 1.2 tỷ, hoặc 0 nếu không ghi rõ).
-10. "status": Trạng thái pháp lý hợp đồng (chọn 1 trong 4 giá trị tiếng Anh: "Draft", "Active", "Expired", "Terminated").
-11. "sign_date": Ngày ký hợp đồng theo định dạng ISO YYYY-MM-DD (Ví dụ: "2025-08-01").
-12. "effective_date": Ngày hợp đồng bắt đầu có hiệu lực (YYYY-MM-DD).
-13. "expiration_date": Ngày hết hạn hợp đồng (YYYY-MM-DD).
-14. "ocr_content": Toàn bộ văn bản đầy đủ của hợp đồng ở định dạng Markdown cấu trúc chuẩn thu được qua Baidu Unlimited-OCR (giữ nguyên tất cả các điều khoản, bảng biểu, danh sách).
+Nhiệm vụ: Phân tích tài liệu hợp đồng ${fileName ? `"${fileName}"` : ''} và trích xuất các trường thông tin cụ thể của Đối tác (Khách hàng hoặc Nhà cung cấp), loại trừ hoàn toàn thông tin của SPV Group.
+
+Yêu cầu bóc tách dữ liệu:
+1. "contract_number": Số hợp đồng/Số thỏa thuận nguyên văn như trên tiêu đề hoặc đầu trang (ví dụ: "01/2026/HĐKT-SPV", "SPV-KF/2026-08").
+2. "title": Tên đầy đủ của hợp đồng.
+3. "party_a": Tên công ty SPV Group ("CÔNG TY TNHH SPV GROUP").
+4. "party_b": Tên đầy đủ của Đối tác (Khách hàng/Nhà cung cấp/Bên B). TUYỆT ĐỐI KHÔNG lấy tên SPV Group.
+5. "party_b_tax": Mã số thuế của Đối tác bên B. TUYỆT ĐỐI KHÔNG lấy mã số thuế của SPV Group.
+6. "party_b_address": Địa chỉ Đối tác bên B.
+7. "party_b_represent": Người đại diện Đối tác bên B.
+8. "party_b_position": Chức vụ người đại diện Đối tác bên B.
+9. "value": Tổng giá trị hợp đồng bằng số nguyên VNĐ (hoặc 0 nếu không xác định).
+10. "status": Trạng thái pháp lý ("Active", "Draft", "Expired", "Terminated").
+11. "sign_date": Ngày ký hợp đồng theo định dạng ISO YYYY-MM-DD.
+12. "effective_date": Ngày bắt đầu hiệu lực (YYYY-MM-DD). Nếu ghi kể từ ngày ký, lấy trùng sign_date.
+13. "expiration_date": Ngày hết hạn hiệu lực (YYYY-MM-DD). Nếu vô thời hạn hoặc thiếu thông tin, để trống/null.
+14. "ocr_content": Toàn bộ văn bản đầy đủ của hợp đồng ở định dạng Markdown cấu trúc chuẩn.
 
 Văn bản hợp đồng đầu vào:
 """
