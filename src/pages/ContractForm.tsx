@@ -70,11 +70,10 @@ export default function ContractForm() {
   const [isAddingNewType, setIsAddingNewType] = useState(false);
 
   const [file, setFile] = useState<File | null>(null);
-  const [compressing, setCompressing] = useState(false);
-  const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
+  const [fileInfo, setFileInfo] = useState<CompressionResult | null>(null);
   const [targetDriveFolder, setTargetDriveFolder] = useState<DriveFolder>(() => getSelectedDriveFolder());
   const [driveAccount, setDriveAccount] = useState<DriveAccountInfo | null>(() => getConnectedDriveAccount());
-  const [driveFolders, setDriveFolders] = useState<DriveFolder[]>(() => getAllDriveFolders());
+  const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -86,6 +85,13 @@ export default function ContractForm() {
   const [showOcrText, setShowOcrText] = useState(false);
 
   useEffect(() => {
+    getAllDriveFolders().then(folders => {
+      setDriveFolders(folders);
+      const current = getSelectedDriveFolder();
+      const matched = folders.find(f => f.id === current.id) || current;
+      setTargetDriveFolder(matched);
+    });
+
     if (isEdit && id) {
       loadContract(id);
     }
@@ -129,21 +135,17 @@ export default function ContractForm() {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
-      setCompressing(true);
-      setCompressionInfo(null);
       setIsOcrProcessing(true);
       setOcrSuccess(false);
       setOcrProgressMsg('Bắt đầu đọc tệp đính kèm...');
 
-      // 1. File Compression
+      // 1. Prepare intact original file (No Ghostscript compression)
       try {
-        const compRes = await compressContractFile(selectedFile);
-        setFile(compRes.file);
-        setCompressionInfo(compRes);
+        const prep = await compressContractFile(selectedFile);
+        setFile(prep.file);
+        setFileInfo(prep);
       } catch (err) {
-        console.warn("Compression notice:", err);
-      } finally {
-        setCompressing(false);
+        console.warn("File prep notice:", err);
       }
 
       // 2. OCR & AI Data Extraction into Form Fields
@@ -211,9 +213,14 @@ export default function ContractForm() {
         ? customContractType.trim() 
         : (formData.contract_type || 'HĐ đại lý hải quan');
 
+      // Auto-generate contract title cleanly
+      const autoTitle = formData.title?.trim() 
+        || `${finalContractType} - ${formData.party_b || formData.contract_number || 'SPV'}`;
+
       await upsertContract({
         ...formData,
         contract_type: finalContractType,
+        title: autoTitle,
         file_id: file_id || null,
         file_url: file_url || null,
         file_name: file_name || null,
@@ -366,7 +373,7 @@ export default function ContractForm() {
           </div>
 
           {/* SECTION 2: Thông Tin Pháp Lý & Đối Tác */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
                 Số Hợp Đồng <span className="text-rose-500">*</span>
@@ -382,24 +389,6 @@ export default function ContractForm() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
-                Tên Hợp Đồng / Trích Yếu <span className="text-rose-500">*</span>
-              </label>
-              <input 
-                type="text" 
-                name="title" 
-                required
-                placeholder="VD: Hợp đồng Đại lý Hải quan SPV-KF"
-                value={formData.title} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold" 
-              />
-            </div>
-          </div>
-
-          {/* Đối tác & Mã số thuế & Hình thức ký */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5 md:col-span-2">
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
                 Khách Hàng / Nhà Cung Cấp <span className="text-rose-500">*</span>
@@ -414,7 +403,10 @@ export default function ContractForm() {
                 className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold" 
               />
             </div>
+          </div>
 
+          {/* Đối tác & Mã số thuế & Hình thức ký */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
                 Mã Số Thuế <span className="text-rose-500">*</span>
@@ -429,10 +421,7 @@ export default function ContractForm() {
                 className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-mono font-semibold" 
               />
             </div>
-          </div>
 
-          {/* Hình thức ký */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
                 Hình Thức Ký <span className="text-rose-500">*</span>
@@ -545,43 +534,36 @@ export default function ContractForm() {
                   <button
                     type="button"
                     onClick={() => setIsFolderModalOpen(true)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
                   >
-                    <FolderPlus className="w-3.5 h-3.5" />
-                    <span>Chọn thư mục Drive</span>
+                    <FolderPlus className="w-4 h-4 text-amber-300" />
+                    <span>Quản lý & Chọn Thư Mục / Thư Mục Con</span>
                   </button>
                 </div>
               </div>
 
               {/* Active Folder Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white/10 p-3 rounded-xl border border-white/10 backdrop-blur-xs">
-                <div className="flex items-center space-x-2.5">
+                <div className="flex items-center space-x-2.5 min-w-0 flex-1">
                   <Folder className="w-4 h-4 text-amber-300 shrink-0" />
-                  <span className="text-xs text-blue-100">Thư mục hiện tại:</span>
-                  <span className="text-xs font-bold text-amber-300 font-mono bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/30">
-                    {targetDriveFolder.name}
-                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-blue-200">Đường dẫn Google Drive:</span>
+                      <span className="text-xs font-bold text-amber-300 font-mono bg-amber-400/10 px-2.5 py-0.5 rounded-md border border-amber-400/30 truncate">
+                        {targetDriveFolder.path || targetDriveFolder.name}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-gray-300 hidden sm:inline">Chuyển nhanh:</span>
-                  <select
-                    value={targetDriveFolder.id}
-                    onChange={(e) => {
-                      const found = driveFolders.find(f => f.id === e.target.value);
-                      if (found) {
-                        setTargetDriveFolder(found);
-                        setSelectedDriveFolder(found);
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-slate-900 text-white border border-blue-500/50 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-blue-400 outline-none cursor-pointer shadow-inner"
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsFolderModalOpen(true)}
+                    className="px-2.5 py-1 bg-white/15 hover:bg-white/25 text-white rounded-lg text-xs font-medium transition-colors"
                   >
-                    {driveFolders.map((f) => (
-                      <option key={f.id} value={f.id} className="bg-slate-900 text-white">
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
+                    Đổi thư mục...
+                  </button>
                 </div>
               </div>
             </div>
@@ -591,7 +573,7 @@ export default function ContractForm() {
               <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between">
                 <span>Tải file tài liệu đính kèm để trích xuất OCR AI (PDF, Ảnh, Word, Markdown, Text)</span>
                 <span className="text-blue-600 font-semibold flex items-center gap-1 text-[10px]">
-                  <HardDrive className="w-3 h-3" /> Sẽ tự động lưu vào Google Drive
+                  <HardDrive className="w-3 h-3" /> Lưu nguyên bản 100% vào Google Drive
                 </span>
               </label>
               <div className="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-gray-200 border-dashed hover:border-blue-500 bg-gray-50/40 hover:bg-blue-50/20 rounded-xl transition-all">
@@ -616,29 +598,22 @@ export default function ContractForm() {
                     </div>
                   )}
 
-                  {compressing && !isOcrProcessing && (
-                    <div className="mt-3 flex items-center justify-center text-xs font-semibold text-blue-700 bg-blue-50 py-2 px-3 rounded-lg border border-blue-200 inline-flex gap-2">
-                      <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                      <span>Đang nén tập tin đính kèm...</span>
-                    </div>
-                  )}
-
-                  {!compressing && compressionInfo && (
+                  {!isOcrProcessing && fileInfo && (
                     <div className="mt-3 flex flex-col items-center justify-center text-xs font-semibold text-emerald-800 bg-emerald-50 py-2.5 px-4 rounded-xl border border-emerald-200 space-y-1 shadow-2xs">
                       <div className="flex items-center gap-2">
                         <FileIcon className="w-4 h-4 text-emerald-600" />
-                        <span className="font-bold">{compressionInfo.file.name}</span>
+                        <span className="font-bold">{fileInfo.file.name}</span>
                         <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 text-[10px] font-bold rounded-md uppercase tracking-wider font-mono">
-                          {compressionInfo.engine}
+                          {fileInfo.engine}
                         </span>
                       </div>
                       <p className="text-[11px] font-mono text-emerald-700">
-                        {compressionInfo.message}
+                        {fileInfo.message}
                       </p>
                     </div>
                   )}
 
-                  {!compressing && !compressionInfo && file && (
+                  {!isOcrProcessing && !fileInfo && file && (
                     <div className="mt-3 flex items-center justify-center text-xs font-semibold text-emerald-700 bg-emerald-50 py-2 px-4 rounded-xl border border-emerald-200 inline-flex gap-2 shadow-2xs">
                       <FileIcon className="w-4 h-4 text-emerald-600" />
                       <span>Tệp đã chọn: <b>{file.name}</b></span>
@@ -680,10 +655,11 @@ export default function ContractForm() {
         isOpen={isFolderModalOpen}
         onClose={() => setIsFolderModalOpen(false)}
         fileName={file?.name}
-        onSelectFolder={(selectedFolder) => {
+        onSelectFolder={async (selectedFolder) => {
           setTargetDriveFolder(selectedFolder);
           setSelectedDriveFolder(selectedFolder);
-          setDriveFolders(getAllDriveFolders());
+          const updated = await getAllDriveFolders();
+          setDriveFolders(updated);
           setIsFolderModalOpen(false);
         }}
       />
