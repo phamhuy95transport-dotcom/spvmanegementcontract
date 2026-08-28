@@ -5,6 +5,15 @@ if (pdfjs && pdfjs.GlobalWorkerOptions) {
   pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 }
 
+export interface ExpertContractOutput {
+  contract_number: string | null;
+  partner_name: string | null;
+  partner_tax_code: string | null;
+  signed_date: string | null;
+  effective_date: string | null;
+  expiry_date: string | null;
+}
+
 export interface ExtractedContractFields {
   contract_number: string;
   title: string;
@@ -21,6 +30,19 @@ export interface ExtractedContractFields {
   expiration_date: string;
   ocr_content: string;
   ocr_engine?: string;
+}
+
+// Helper to check if a string is SPV Group
+export function isSPVEntity(str: string | null | undefined): boolean {
+  if (!str) return false;
+  const s = str.toLowerCase().trim();
+  return (
+    s.includes('spv group') ||
+    s.includes('công ty tnhh spv') ||
+    s.includes('spv logistics') ||
+    s.includes('super port vietnam') ||
+    s === 'spv'
+  );
 }
 
 // Convert File to Base64 data URL
@@ -174,9 +196,193 @@ function formatDateISO(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Local fallback expert parser adhering strictly to the JSON schema and partner isolation rules
+export function parseContractExpertLocally(rawText: string, fileName: string = ''): ExpertContractOutput {
+  const cleanText = rawText || '';
+
+  // 1. Contract number (Preserve exact casing, slashes, dashes)
+  let contract_number: string | null = null;
+  const numMatch = cleanText.match(/(?:Số|Mã số|HĐ|Số HĐ|Contract No|Agreement No|No\.)\s*[:.-]?\s*([A-Za-z0-9/\-_.]+)/i);
+  if (numMatch && numMatch[1].trim().length >= 3) {
+    contract_number = numMatch[1].trim();
+  } else if (fileName) {
+    const fnClean = fileName.replace(/\.[^/.]+$/, '').trim();
+    if (fnClean) {
+      contract_number = fnClean;
+    }
+  }
+
+  // 2. Partner Name (Exclude SPV Group completely)
+  let partner_name: string | null = null;
+  // Look for Bên B, Bên nhận, Bên cung cấp, Khách hàng, Đối tác, Party B
+  const partyBMatch = cleanText.match(/(?:BÊN B|Bên B|BÊN NHẬN|BÊN CUNG CẤP|BÊN THỰC HIỆN|KHÁCH HÀNG|ĐỐI TÁC|PARTY B)[^\n:]*[:\n]\s*(?:CÔNG TY|DOANH NGHIỆP|TỔ CHỨC|ÔNG|BÀ)?\s*([^\n\r,]+)/i);
+  if (partyBMatch && partyBMatch[1].trim().length > 3) {
+    const candidate = partyBMatch[1].replace(/^(Tên công ty|Ông|Bà|Công ty|TNHH|Cổ phần)\s*[:.-]?\s*/i, '').trim();
+    if (!isSPVEntity(candidate)) {
+      partner_name = partyBMatch[0].replace(/^(?:BÊN B|Bên B|KHÁCH HÀNG|ĐỐI TÁC|PARTY B)[^\n:]*[:\n]\s*/i, '').trim();
+    }
+  }
+
+  if (!partner_name) {
+    // Try scanning for company names not belonging to SPV
+    const companyMatches = cleanText.matchAll(/CÔNG TY\s+(?:TNHH|CỔ PHẦN|CP|TNHH MTV)?\s+[^\n\r,]+/gi);
+    for (const match of companyMatches) {
+      const cName = match[0].trim();
+      if (!isSPVEntity(cName)) {
+        partner_name = cName;
+        break;
+      }
+    }
+  }
+
+  // 3. Partner Tax Code (Exclude SPV Tax Code)
+  let partner_tax_code: string | null = null;
+  const taxMatches = cleanText.matchAll(/(?:Mã số thuế|MST|Tax Code|Tax ID)\s*[:.-]?\s*([0-9]{10}(?:-[0-9]{3})?)/gi);
+  for (const match of taxMatches) {
+    const code = match[1].trim();
+    // Exclude mock/known SPV tax code
+    if (code !== '0101234567') {
+      partner_tax_code = code;
+      break;
+    }
+  }
+
+  // 4. Dates normalization (ISO YYYY-MM-DD | null)
+  let signed_date: string | null = null;
+  let effective_date: string | null = null;
+  let expiry_date: string | null = null;
+
+  // Search for date patterns: "ngày DD tháng MM năm YYYY" or "DD/MM/YYYY" or "YYYY-MM-DD"
+  const datePatterns = [
+    /ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i,
+    /(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/,
+    /(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/,
+  ];
+
+  const signMatch = cleanText.match(/(?:Hà Nội|TP\.?HCM|Hồ Chí Minh|Hải Phòng|Đà Nẵng|Bình Dương)?,\s*ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i) ||
+                    cleanText.match(/ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i);
+
+  if (signMatch) {
+    const d = parseInt(signMatch[1], 10);
+    const m = parseInt(signMatch[2], 10);
+    const y = parseInt(signMatch[3], 10);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1990 && y <= 2100) {
+      signed_date = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  // Effective date
+  const effMatch = cleanText.match(/(?:có hiệu lực|hiệu lực thi hành|bắt đầu từ|kể từ)\s*(?:ngày)?\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/i) ||
+                   cleanText.match(/(?:có hiệu lực|hiệu lực thi hành|bắt đầu từ|kể từ)\s*ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i);
+  if (effMatch) {
+    const d = parseInt(effMatch[1], 10);
+    const m = parseInt(effMatch[2], 10);
+    const y = parseInt(effMatch[3], 10);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1990 && y <= 2100) {
+      effective_date = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  } else if (cleanText.includes('kể từ ngày ký') || cleanText.includes('kể từ ngày hai bên ký kết')) {
+    effective_date = signed_date;
+  } else {
+    effective_date = signed_date;
+  }
+
+  // Expiration date
+  const expMatch = cleanText.match(/(?:hết hiệu lực|chấm dứt|đến hết ngày|hết hạn vào ngày|đến ngày)\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/i) ||
+                   cleanText.match(/(?:hết hiệu lực|chấm dứt|đến hết ngày|hết hạn vào ngày|đến ngày)\s*ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i);
+  if (expMatch) {
+    const d = parseInt(expMatch[1], 10);
+    const m = parseInt(expMatch[2], 10);
+    const y = parseInt(expMatch[3], 10);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1990 && y <= 2100) {
+      expiry_date = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  return {
+    contract_number: contract_number || null,
+    partner_name: partner_name || null,
+    partner_tax_code: partner_tax_code || null,
+    signed_date: signed_date || null,
+    effective_date: effective_date || null,
+    expiry_date: expiry_date || null,
+  };
+}
+
+// Master Expert OCR Extraction Runner
+export async function runExpertContractOCR(
+  fileOrBase64: File | string,
+  fileName: string = 'document',
+  mimeType: string = 'application/pdf',
+  onProgress?: (percent: number, msg: string) => void
+): Promise<{ data: ExpertContractOutput; rawJson: string; ocrText: string }> {
+  onProgress?.(15, 'Đang đọc và phân tích tệp hợp đồng quang học...');
+
+  let base64 = '';
+  let rawText = '';
+
+  if (typeof fileOrBase64 === 'string') {
+    base64 = fileOrBase64;
+  } else {
+    const res = await extractRawTextFromFile(fileOrBase64, onProgress);
+    rawText = res.text;
+    base64 = res.base64 || (await fileToBase64(fileOrBase64));
+    mimeType = fileOrBase64.type || mimeType;
+    fileName = fileOrBase64.name || fileName;
+  }
+
+  onProgress?.(45, 'Chuyên gia OCR AI: Bóc tách đối tác (loại trừ SPV Group) & chuẩn hóa ISO...');
+
+  try {
+    const apiRes = await fetch('/api/expert-ocr-extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: rawText,
+        fileBase64: base64,
+        mimeType,
+        fileName,
+      }),
+    });
+
+    if (apiRes.ok) {
+      const json = await apiRes.json();
+      if (json.success && json.data) {
+        onProgress?.(100, 'Hoàn tất trích xuất Chuyên gia OCR!');
+        const outData: ExpertContractOutput = {
+          contract_number: json.data.contract_number ?? null,
+          partner_name: isSPVEntity(json.data.partner_name) ? null : (json.data.partner_name ?? null),
+          partner_tax_code: json.data.partner_tax_code ?? null,
+          signed_date: json.data.signed_date ?? null,
+          effective_date: json.data.effective_date ?? null,
+          expiry_date: json.data.expiry_date ?? null,
+        };
+        return {
+          data: outData,
+          rawJson: JSON.stringify(outData, null, 2),
+          ocrText: rawText || 'Văn bản đã được trích xuất trực tiếp qua bộ nhận dạng thị giác.',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Expert OCR API notice, using local expert fallback:', err);
+  }
+
+  onProgress?.(90, 'Phân giải chuẩn xác qua bộ phân tích quy tắc cục bộ...');
+  const localData = parseContractExpertLocally(rawText, fileName);
+  onProgress?.(100, 'Hoàn tất trích xuất!');
+
+  return {
+    data: localData,
+    rawJson: JSON.stringify(localData, null, 2),
+    ocrText: rawText || `Nội dung tài liệu ${fileName}`,
+  };
+}
+
 // Local fallback parser using regex rules
 export function parseContractTextLocally(rawText: string, fileName: string): ExtractedContractFields {
   const cleanText = rawText || '';
+  const expertData = parseContractExpertLocally(cleanText, fileName);
   const now = new Date();
   const todayISO = formatDateISO(now);
 
@@ -185,14 +391,7 @@ export function parseContractTextLocally(rawText: string, fileName: string): Ext
   const nextYearISO = formatDateISO(nextYear);
 
   // 1. Contract number
-  let contract_number = '';
-  const numMatch = cleanText.match(/(?:Số|Mã số|HĐ|Số HĐ)\s*[:.-]?\s*([A-Za-z0-9/\-_.]+)/i);
-  if (numMatch && numMatch[1].length >= 3) {
-    contract_number = numMatch[1].trim();
-  } else {
-    const fnClean = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9]/g, '-').toUpperCase();
-    contract_number = `HD-${new Date().getFullYear()}-${fnClean.slice(-8)}`;
-  }
+  const contract_number = expertData.contract_number || `HD-${new Date().getFullYear()}-${fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(-8)}`;
 
   // 2. Title
   let title = '';
@@ -205,28 +404,13 @@ export function parseContractTextLocally(rawText: string, fileName: string): Ext
   }
 
   // 3. Party A
-  let party_a = 'CÔNG TY TNHH SPV GROUP';
-  const partyAMatch = cleanText.match(/BÊN A[^\n]*[:\n]\s*(CÔNG TY[^\n]+|DOANH NGHIỆP[^\n]+|[^\n]+)/i);
-  if (partyAMatch && partyAMatch[1].trim().length > 3) {
-    party_a = partyAMatch[1].replace(/^(Tên công ty|Ông|Bà|Công ty)\s*[:.-]?\s*/i, '').trim();
-  }
+  const party_a = 'CÔNG TY TNHH SPV GROUP';
 
-  // 4. Party B
-  let party_b = '';
-  const partyBMatch = cleanText.match(/BÊN B[^\n]*[:\n]\s*(CÔNG TY[^\n]+|DOANH NGHIỆP[^\n]+|[^\n]+)/i);
-  if (partyBMatch && partyBMatch[1].trim().length > 3) {
-    party_b = partyBMatch[1].replace(/^(Tên công ty|Ông|Bà|Công ty)\s*[:.-]?\s*/i, '').trim();
-  } else {
-    const altPartyB = cleanText.match(/(?:Đối tác|Khách hàng)\s*[:.-]?\s*([^\n]+)/i);
-    party_b = altPartyB ? altPartyB[1].trim() : 'CÔNG TY TNHH KANG FOODS';
-  }
+  // 4. Party B (Exclude SPV Group)
+  const party_b = expertData.partner_name || 'CÔNG TY TNHH KANG FOODS';
 
   // 5. Party B Tax Code
-  let party_b_tax = '';
-  const taxMatch = cleanText.match(/(?:Mã số thuế|MST)\s*[:.-]?\s*([0-9\-]{8,15})/i);
-  if (taxMatch) {
-    party_b_tax = taxMatch[1].trim();
-  }
+  const party_b_tax = expertData.partner_tax_code || '';
 
   // 6. Party B Address
   let party_b_address = '';
@@ -246,27 +430,6 @@ export function parseContractTextLocally(rawText: string, fileName: string): Ext
     }
   }
 
-  // 8. Dates
-  let sign_date = todayISO;
-  let effective_date = todayISO;
-  let expiration_date = nextYearISO;
-
-  const dateMatch = cleanText.match(/Ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i);
-  if (dateMatch) {
-    const d = parseInt(dateMatch[1], 10);
-    const m = parseInt(dateMatch[2], 10);
-    const y = parseInt(dateMatch[3], 10);
-    if (d > 0 && d <= 31 && m > 0 && m <= 12 && y >= 2000) {
-      const dt = new Date(y, m - 1, d);
-      sign_date = formatDateISO(dt);
-      effective_date = sign_date;
-
-      const expDt = new Date(dt);
-      expDt.setFullYear(expDt.getFullYear() + 1);
-      expiration_date = formatDateISO(expDt);
-    }
-  }
-
   return {
     contract_number,
     title,
@@ -276,9 +439,9 @@ export function parseContractTextLocally(rawText: string, fileName: string): Ext
     party_b_address,
     value,
     status: 'Active',
-    sign_date,
-    effective_date,
-    expiration_date,
+    sign_date: expertData.signed_date || todayISO,
+    effective_date: expertData.effective_date || expertData.signed_date || todayISO,
+    expiration_date: expertData.expiry_date || nextYearISO,
     ocr_content: cleanText || `Nội dung tệp ${fileName}`,
   };
 }
@@ -292,7 +455,7 @@ export async function processContractFileOCR(
 
   const { text: rawText, base64 } = await extractRawTextFromFile(file, onProgress);
 
-  onProgress?.(70, 'Đang gửi dữ liệu phân tích qua Baidu Unlimited-OCR (Hugging Face)...');
+  onProgress?.(60, 'Chuyên gia OCR AI: Bóc tách Đối tác & đối soát dữ liệu...');
 
   try {
     const res = await fetch('/api/extract-contract-data', {
@@ -309,29 +472,36 @@ export async function processContractFileOCR(
     if (res.ok) {
       const json = await res.json();
       if (json.success && json.data) {
-        onProgress?.(100, 'Hoàn tất trích xuất Baidu Unlimited-OCR!');
+        onProgress?.(100, 'Hoàn tất trích xuất Chuyên gia OCR!');
         const d = json.data;
+        const localParsed = parseContractTextLocally(rawText, file.name);
+        
+        let validPartyB = d.party_b;
+        if (isSPVEntity(validPartyB)) {
+          validPartyB = localParsed.party_b;
+        }
+
         return {
-          contract_number: d.contract_number || parseContractTextLocally(rawText, file.name).contract_number,
-          title: d.title || parseContractTextLocally(rawText, file.name).title,
-          party_a: d.party_a || 'CÔNG TY TNHH SPV GROUP',
-          party_b: d.party_b || parseContractTextLocally(rawText, file.name).party_b,
-          party_b_tax: d.party_b_tax || '',
-          party_b_address: d.party_b_address || '',
+          contract_number: d.contract_number || localParsed.contract_number,
+          title: d.title || localParsed.title,
+          party_a: 'CÔNG TY TNHH SPV GROUP',
+          party_b: validPartyB || localParsed.party_b,
+          party_b_tax: d.party_b_tax || localParsed.party_b_tax || '',
+          party_b_address: d.party_b_address || localParsed.party_b_address || '',
           party_b_represent: d.party_b_represent || '',
           party_b_position: d.party_b_position || '',
-          value: typeof d.value === 'number' ? d.value : parseContractTextLocally(rawText, file.name).value,
+          value: typeof d.value === 'number' ? d.value : localParsed.value,
           status: ['Draft', 'Active', 'Expired', 'Terminated'].includes(d.status) ? d.status : 'Active',
-          sign_date: d.sign_date || parseContractTextLocally(rawText, file.name).sign_date,
-          effective_date: d.effective_date || parseContractTextLocally(rawText, file.name).effective_date,
-          expiration_date: d.expiration_date || parseContractTextLocally(rawText, file.name).expiration_date,
+          sign_date: d.sign_date || localParsed.sign_date,
+          effective_date: d.effective_date || localParsed.effective_date,
+          expiration_date: d.expiration_date || localParsed.expiration_date,
           ocr_content: d.ocr_content || rawText || `Nội dung trích xuất từ tệp ${file.name}`,
-          ocr_engine: 'baidu/Unlimited-OCR',
+          ocr_engine: 'gemini-expert-ocr',
         };
       }
     }
   } catch (err) {
-    console.warn('API extraction error, using local fallback:', err);
+    console.warn('API extraction error, using local expert fallback:', err);
   }
 
   onProgress?.(100, 'Trích xuất bằng bộ nhận dạng quy tắc cục bộ...');
