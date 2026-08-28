@@ -398,17 +398,17 @@ export default function ContractForm() {
             </div>
           </div>
 
-          {/* Đối tác & Mã số thuế */}
+          {/* Đối tác & Mã số thuế & Hình thức ký */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5 md:col-span-2">
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
-                Khách Hàng / Nhà Cung Cấp (Bên B) <span className="text-rose-500">*</span>
+                Khách Hàng / Nhà Cung Cấp <span className="text-rose-500">*</span>
               </label>
               <input 
                 type="text" 
                 name="party_b" 
                 required
-                placeholder="Tên đầy đủ của doanh nghiệp hoặc đối tác"
+                placeholder="Tên đầy đủ của doanh nghiệp khách hàng hoặc nhà cung cấp"
                 value={formData.party_b} 
                 onChange={handleChange}
                 className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold" 
@@ -431,21 +431,8 @@ export default function ContractForm() {
             </div>
           </div>
 
-          {/* Bên A & Hình thức ký & Giá trị */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
-                Bên A (Chủ Thể)
-              </label>
-              <input 
-                type="text" 
-                name="party_a" 
-                value={formData.party_a} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold" 
-              />
-            </div>
-
+          {/* Hình thức ký */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
                 Hình Thức Ký <span className="text-rose-500">*</span>
@@ -460,20 +447,6 @@ export default function ContractForm() {
                   <option key={m} value={m}>{m}</option>
                 ))}
               </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
-                Giá Trị Hợp Đồng (VNĐ)
-              </label>
-              <input 
-                type="number" 
-                name="value" 
-                placeholder="0"
-                value={formData.value || ''} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-mono font-semibold" 
-              />
             </div>
           </div>
 

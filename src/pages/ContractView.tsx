@@ -31,28 +31,19 @@ import {
   Calendar,
   FileSignature,
   Hash,
-  X
+  X,
+  FileCheck2,
+  Eye
 } from 'lucide-react';
 import { Contract, SigningMethod } from '../types';
 import { format, addYears, parseISO } from 'date-fns';
-// react-pdf setup
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
-
-// Ensure worker version matches the installed pdfjs API version exactly
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+import { ACTIVE_GOOGLE_DRIVE_EMAIL } from '../lib/drive';
 
 export default function ContractView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  // PDF state
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageNumber, setPageNumber] = useState<number>(1);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
   // OCR state
   const [ocrResult, setOcrResult] = useState<string>('');
@@ -68,7 +59,6 @@ export default function ContractView() {
   const [newEffectiveDate, setNewEffectiveDate] = useState('');
   const [newExpirationDate, setNewExpirationDate] = useState('');
   const [newSignDate, setNewSignDate] = useState('');
-  const [newValue, setNewValue] = useState<number>(0);
   const [newSigningMethod, setNewSigningMethod] = useState<SigningMethod>('Ký điện tử');
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -81,20 +71,11 @@ export default function ContractView() {
         if (found.ocr_content) {
           setOcrResult(found.ocr_content);
         }
-        if (found.file_url) {
-          setPdfUrl(found.file_url);
-        } else {
-          setPdfUrl(null);
-        }
       }
       setLoading(false);
     }
     loadData();
   }, [id]);
-
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    setNumPages(numPages);
-  }
 
   const handleOcrScan = async () => {
     setIsScanning(true);
@@ -115,7 +96,7 @@ export default function ContractView() {
         );
         resultText = unlimitedData.text || contract.ocr_content || '';
       } else {
-        resultText = contract?.ocr_content || `### KẾT QUẢ TRÍCH XUẤT BAIDU UNLIMITED-OCR (HUGGING FACE)\n\n**1. MÃ HỢP ĐỒNG:** ${contract?.contract_number || ''}\n**2. TÊN HỢP ĐỒNG:** ${contract?.title || ''}\n**3. PHÂN LOẠI:** ${contract?.category || ''} • ${contract?.contract_type || ''}\n**4. BÊN B (ĐỐI TÁC):** ${contract?.party_b || ''} (MST: ${contract?.tax_code || 'N/A'})\n**5. GIÁ TRỊ:** ${contract?.value ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(contract.value) : '0 VNĐ'}\n**6. THỜI HẠN:** ${contract?.effective_date || ''} đến ${contract?.expiration_date || ''}`;
+        resultText = contract?.ocr_content || `### KẾT QUẢ TRÍCH XUẤT BAIDU UNLIMITED-OCR (HUGGING FACE)\n\n**1. MÃ HỢP ĐỒNG:** ${contract?.contract_number || ''}\n**2. TÊN HỢP ĐỒNG:** ${contract?.title || ''}\n**3. PHÂN LOẠI:** ${contract?.category || ''} • ${contract?.contract_type || ''}\n**4. KHÁCH HÀNG / NHÀ CUNG CẤP:** ${contract?.party_b || ''} (MST: ${contract?.tax_code || 'N/A'})\n**5. THỜI HẠN:** ${contract?.effective_date || ''} đến ${contract?.expiration_date || ''}`;
       }
     } catch (err) {
       console.error("Baidu Unlimited-OCR Error:", err);
@@ -164,7 +145,6 @@ export default function ContractView() {
     setNewEffectiveDate(defaultEffDate);
     setNewExpirationDate(defaultExpDate);
     setNewSignDate(todayStr);
-    setNewValue(contract.value || 0);
     setNewSigningMethod(contract.signing_method || 'Ký điện tử');
     setActionReason('');
     setActiveActionModal(type);
@@ -185,7 +165,6 @@ export default function ContractView() {
           new_effective_date: newEffectiveDate,
           new_expiration_date: newExpirationDate,
           new_sign_date: newSignDate,
-          new_value: newValue,
           action_note: actionReason || `Gia hạn từ HĐ ${contract.contract_number}`,
         });
         if (res) navigate(`/contracts/${res.newContract.id}`);
@@ -196,7 +175,6 @@ export default function ContractView() {
           new_sign_date: newSignDate,
           new_effective_date: newEffectiveDate,
           new_expiration_date: newExpirationDate,
-          new_value: newValue,
           new_signing_method: newSigningMethod,
           action_note: actionReason || `Thay thế cho HĐ ${contract.contract_number}`,
         });
@@ -222,6 +200,13 @@ export default function ContractView() {
   }
 
   const alertInfo = shouldAlertContract(contract);
+
+  // Compute Google Drive file link
+  const driveFileId = contract.file_id || (contract.file_url && contract.file_url.includes('/file/d/') ? contract.file_url.split('/file/d/')[1]?.split('/')[0] : null);
+  const driveDirectLink = driveFileId 
+    ? `https://drive.google.com/file/d/${driveFileId}/view?usp=sharing` 
+    : (contract.file_url?.startsWith('http') ? contract.file_url : null);
+  const drivePreviewLink = driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : null;
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
@@ -291,6 +276,18 @@ export default function ContractView() {
             <span>Sửa HĐ</span>
           </Link>
 
+          {driveDirectLink && (
+            <a
+              href={driveDirectLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center px-3.5 py-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold shadow-2xs transition-colors gap-1.5"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Mở trên Google Drive</span>
+            </a>
+          )}
+
           <button 
             onClick={handleOcrScan}
             disabled={isScanning}
@@ -302,69 +299,71 @@ export default function ContractView() {
         </div>
       </div>
 
-      {/* Grid Layout: Left Document Viewer, Right Info Panel */}
+      {/* Grid Layout: Left Google Drive Direct Viewer, Right Info Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* PDF / Document Viewer Area */}
+        {/* Google Drive Document Viewer Area */}
         <div className="lg:col-span-7 bg-white rounded-2xl border border-gray-200 shadow-2xs flex flex-col min-h-[600px] overflow-hidden">
           <div className="p-3.5 border-b border-gray-100 bg-gray-50/70 flex items-center justify-between text-xs text-gray-600">
             <div className="flex items-center space-x-2">
-              <FileText className="w-4 h-4 text-blue-600" />
+              <HardDrive className="w-4 h-4 text-blue-600" />
               <span className="font-semibold text-slate-800">
-                {contract.file_name ? `Tệp: ${contract.file_name}` : 'Trình xem tài liệu PDF.js'}
+                {contract.file_name ? `Tệp đã tải lên: ${contract.file_name}` : 'Tài liệu Google Drive'}
               </span>
             </div>
-            {numPages > 0 && !contract.file_type?.startsWith('image/') && (
-              <div className="flex items-center space-x-3 font-medium">
-                <button 
-                  disabled={pageNumber <= 1}
-                  onClick={() => setPageNumber(prev => Math.max(prev - 1, 1))}
-                  className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-[11px] hover:bg-gray-50 disabled:opacity-30"
-                >
-                  Trước
-                </button>
-                <span>Trang {pageNumber} / {numPages}</span>
-                <button 
-                  disabled={pageNumber >= numPages}
-                  onClick={() => setPageNumber(prev => Math.min(prev + 1, numPages))}
-                  className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-[11px] hover:bg-gray-50 disabled:opacity-30"
-                >
-                  Sau
-                </button>
-              </div>
+            {driveDirectLink && (
+              <a
+                href={driveDirectLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Xem trên Google Drive</span>
+              </a>
             )}
           </div>
 
-          <div className="flex-1 bg-slate-100/80 p-4 flex justify-center items-center overflow-auto min-h-[550px]">
-            {contract.file_type?.startsWith('image/') || (pdfUrl && pdfUrl.startsWith('data:image/')) ? (
+          <div className="flex-1 bg-slate-100/80 p-4 flex flex-col justify-center items-center overflow-auto min-h-[550px]">
+            {contract.file_type?.startsWith('image/') || (contract.file_url && contract.file_url.startsWith('data:image/')) ? (
               <div className="bg-white p-2 rounded-xl shadow-md border border-slate-200 max-w-full">
                 <img 
-                  src={pdfUrl || contract.file_url!} 
+                  src={contract.file_url!} 
                   alt={contract.file_name || 'Hợp đồng'} 
                   className="max-h-[650px] object-contain rounded-lg mx-auto" 
                 />
               </div>
-            ) : pdfUrl ? (
-              <div className="bg-white p-2 rounded-xl shadow-md border border-slate-200 overflow-hidden">
-                <Document
-                  file={pdfUrl}
-                  onLoadSuccess={onDocumentLoadSuccess}
-                  loading={
-                    <div className="p-12 text-center text-xs text-slate-500 font-medium flex flex-col items-center gap-2">
-                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                      <span>Đang nạp tập tin hợp đồng PDF.js...</span>
-                    </div>
-                  }
-                >
-                  <Page 
-                    pageNumber={pageNumber} 
-                    width={520}
-                    renderTextLayer={true}
-                    renderAnnotationLayer={true}
-                  />
-                </Document>
+            ) : drivePreviewLink ? (
+              <div className="w-full h-full min-h-[560px] bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden flex flex-col">
+                <iframe
+                  src={drivePreviewLink}
+                  title="Google Drive Document Preview"
+                  className="w-full flex-1 border-0 rounded-xl"
+                  allow="autoplay"
+                />
+              </div>
+            ) : driveDirectLink ? (
+              <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-md border border-slate-200 text-center space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto shadow-2xs">
+                  <FileCheck2 className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">{contract.file_name || contract.title}</h3>
+                  <p className="text-xs text-gray-500 mt-1">Tệp đã được lưu trữ an toàn trên Google Drive ({ACTIVE_GOOGLE_DRIVE_EMAIL})</p>
+                </div>
+                <div className="pt-2">
+                  <a
+                    href={driveDirectLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>Mở xem trực tiếp trên Google Drive</span>
+                  </a>
+                </div>
               </div>
             ) : (
-              /* Fallback A4 paper presentation */
+              /* Fallback digital summary presentation */
               <div className="w-full max-w-lg bg-white p-8 rounded-2xl shadow-md border border-slate-200 space-y-4 text-xs text-slate-800 leading-relaxed">
                 <div className="text-center border-b pb-4 border-slate-200 space-y-1">
                   <p className="font-bold uppercase text-slate-500 tracking-wider text-[10px]">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
@@ -374,11 +373,9 @@ export default function ContractView() {
                 </div>
                 <div className="space-y-2 text-slate-700">
                   <p><b>Phân loại:</b> {contract.category} ({contract.contract_type})</p>
-                  <p><b>Bên A (Chủ thể):</b> {contract.party_a}</p>
-                  <p><b>Bên B (Khách hàng/NCC):</b> {contract.party_b}</p>
+                  <p><b>Khách Hàng / Nhà Cung Cấp:</b> {contract.party_b}</p>
                   <p><b>Mã số thuế:</b> {contract.tax_code || 'Chưa cung cấp'}</p>
                   <p><b>Hình thức ký:</b> {contract.signing_method || 'Ký điện tử'}</p>
-                  <p><b>Giá trị hợp đồng:</b> {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(contract.value)}</p>
                   <p><b>Ngày ký:</b> {contract.sign_date || '-'}</p>
                   <p><b>Hiệu lực HĐ:</b> {contract.effective_date || '-'}</p>
                   <p><b>Ngày hết hạn:</b> {contract.expiration_date || '-'}</p>
@@ -393,7 +390,7 @@ export default function ContractView() {
           {/* Legal Details Card */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-2xs p-5 space-y-3.5 text-xs">
             <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 border-b border-gray-100 pb-2">
-              Thông tin chi tiết pháp lý
+              Thông tin chi tiết hợp đồng
             </h3>
             
             <div className="grid grid-cols-2 gap-3 pt-1">
@@ -406,24 +403,18 @@ export default function ContractView() {
                 <span className="font-semibold text-slate-900">{contract.contract_type}</span>
               </div>
 
-              <div>
-                <span className="text-gray-400 block text-[10px] font-bold uppercase">Bên B (Khách hàng/NCC)</span>
-                <span className="font-bold text-slate-900">{contract.party_b}</span>
+              <div className="col-span-2">
+                <span className="text-gray-400 block text-[10px] font-bold uppercase">Khách Hàng / Nhà Cung Cấp</span>
+                <span className="font-bold text-slate-900 text-xs">{contract.party_b}</span>
               </div>
+
               <div>
                 <span className="text-gray-400 block text-[10px] font-bold uppercase">Mã số thuế</span>
                 <span className="font-mono font-bold text-slate-800">{contract.tax_code || '-'}</span>
               </div>
-
               <div>
                 <span className="text-gray-400 block text-[10px] font-bold uppercase">Hình thức ký</span>
                 <span className="font-medium text-slate-800">{contract.signing_method}</span>
-              </div>
-              <div>
-                <span className="text-gray-400 block text-[10px] font-bold uppercase">Giá trị hợp đồng</span>
-                <span className="font-bold text-blue-600 font-mono text-sm">
-                  {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(contract.value)}
-                </span>
               </div>
 
               <div>
@@ -440,7 +431,7 @@ export default function ContractView() {
               <span className="flex items-center gap-1">
                 <HardDrive className="w-3.5 h-3.5 text-blue-500" /> Google Drive OAuth2
               </span>
-              <span className="font-mono text-emerald-600 font-semibold">Đã đồng bộ</span>
+              <span className="font-mono text-emerald-600 font-semibold">Đã lưu trữ ({ACTIVE_GOOGLE_DRIVE_EMAIL})</span>
             </div>
           </div>
 

@@ -9,11 +9,11 @@ import {
   ArrowUpRight, 
   Cpu, 
   HardDrive, 
-  Ship, 
   ArrowRight, 
   PauseCircle,
   RotateCw,
-  ArrowRightLeft
+  ArrowRightLeft,
+  FileSignature
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Link } from 'react-router-dom';
@@ -173,30 +173,30 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Logistics Banner */}
+      {/* Quick Action Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 rounded-2xl p-5 text-white shadow-lg border border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="p-3 bg-blue-600/30 rounded-xl border border-blue-500/30 text-blue-400">
-            <Ship className="w-6 h-6" />
+            <FileSignature className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-white">Trích Xuất Hợp Đồng & Vận Đơn Logistics</h3>
+              <h3 className="text-sm font-bold text-white">Soạn Hợp Đồng Thông Minh & Trích Xuất OCR</h3>
               <span className="px-2 py-0.5 bg-blue-500/30 text-blue-300 text-[10px] font-bold rounded uppercase tracking-wider font-mono border border-blue-400/30">
                 Baidu Unlimited-OCR
               </span>
             </div>
             <p className="text-xs text-gray-300 mt-0.5">
-              Tự động đọc mã HĐ, tên đối tác, mã số thuế, thời hạn hiệu lực và xuất bảng Excel chuẩn mẫu XLSX.
+              Tự động đọc mã HĐ, tên đối tác, mã số thuế, thời hạn hiệu lực và lưu trữ bảo mật trực tiếp lên Google Drive.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
           <Link
-            to="/logistics-ocr"
+            to="/smart-editor"
             className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-sm"
           >
-            <span>Mở OCR Logistics</span>
+            <span>Soạn hợp đồng AI</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
