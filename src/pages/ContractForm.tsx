@@ -1,13 +1,49 @@
 import React, { useState, useEffect, ChangeEvent, FormEvent } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { fetchContractById, upsertContract } from '../lib/contractsService';
-import { uploadFileToDrive, getAllDriveFolders, DriveFolder, getSelectedDriveFolder, setSelectedDriveFolder, getConnectedDriveAccount, DriveAccountInfo } from '../lib/drive';
+import { 
+  fetchContractById, 
+  upsertContract, 
+  evaluateContractStatus, 
+  CONTRACT_CATEGORIES, 
+  DEFAULT_CONTRACT_TYPES, 
+  SIGNING_METHODS 
+} from '../lib/contractsService';
+import { 
+  uploadFileToDrive, 
+  getAllDriveFolders, 
+  DriveFolder, 
+  getSelectedDriveFolder, 
+  setSelectedDriveFolder, 
+  getConnectedDriveAccount, 
+  DriveAccountInfo,
+  ACTIVE_GOOGLE_CLIENT_ID
+} from '../lib/drive';
 import { compressContractFile, CompressionResult } from '../lib/fileCompression';
 import { processContractFileOCR, fileToBase64 } from '../lib/ocrService';
 import GoogleDriveFolderModal from '../components/GoogleDriveFolderModal';
 import GoogleDriveAccountModal from '../components/GoogleDriveAccountModal';
-import { ArrowLeft, Save, Upload, File as FileIcon, HardDrive, Cpu, Loader2, Folder, Sparkles, CheckCircle2, ScanText, FileCode, FolderPlus, UserCheck, Settings } from 'lucide-react';
-import { Contract } from '../types';
+import { 
+  ArrowLeft, 
+  Save, 
+  Upload, 
+  File as FileIcon, 
+  HardDrive, 
+  Loader2, 
+  Folder, 
+  Sparkles, 
+  CheckCircle2, 
+  ScanText, 
+  FileCode, 
+  FolderPlus, 
+  UserCheck, 
+  Settings,
+  Building2,
+  FileSignature,
+  Calendar,
+  Layers,
+  Check
+} from 'lucide-react';
+import { Contract, ContractCategory, ContractType, SigningMethod } from '../types';
 
 export default function ContractForm() {
   const { id } = useParams<{ id: string }>();
@@ -15,17 +51,23 @@ export default function ContractForm() {
   const isEdit = !!id;
 
   const [formData, setFormData] = useState<Partial<Contract>>({
-    title: '',
+    category: 'HĐ đầu ra',
+    contract_type: 'HĐ đại lý hải quan',
     contract_number: '',
+    title: '',
     party_a: 'CÔNG TY TNHH SPV GROUP', // default
     party_b: '',
-    status: 'Draft',
+    tax_code: '',
+    signing_method: 'Ký điện tử',
     value: 0,
     sign_date: '',
     effective_date: '',
     expiration_date: '',
     ocr_content: '',
   });
+
+  const [customContractType, setCustomContractType] = useState('');
+  const [isAddingNewType, setIsAddingNewType] = useState(false);
 
   const [file, setFile] = useState<File | null>(null);
   const [compressing, setCompressing] = useState(false);
@@ -54,18 +96,27 @@ export default function ContractForm() {
     if (existing) {
       setFormData({
         id: existing.id,
-        title: existing.title || '',
+        category: existing.category || 'HĐ đầu ra',
+        contract_type: existing.contract_type || 'HĐ đại lý hải quan',
         contract_number: existing.contract_number || '',
+        title: existing.title || '',
         party_a: existing.party_a || 'CÔNG TY TNHH SPV GROUP',
         party_b: existing.party_b || '',
-        status: existing.status || 'Draft',
+        tax_code: existing.tax_code || '',
+        signing_method: existing.signing_method || 'Ký điện tử',
         value: existing.value || 0,
         sign_date: existing.sign_date || '',
         effective_date: existing.effective_date || '',
         expiration_date: existing.expiration_date || '',
+        manual_status: existing.manual_status || null,
         file_id: existing.file_id || null,
         ocr_content: existing.ocr_content || '',
       });
+
+      if (!DEFAULT_CONTRACT_TYPES.includes(existing.contract_type)) {
+        setIsAddingNewType(true);
+        setCustomContractType(existing.contract_type);
+      }
     }
   };
 
@@ -102,14 +153,22 @@ export default function ContractForm() {
         });
 
         if (extracted) {
+          // Extract tax code if present in OCR text
+          let extractedTaxCode = '';
+          const taxMatch = extracted.ocr_content?.match(/MST[:\s]*([0-9]{10}(?:-[0-9]{3})?)/i) ||
+                           extracted.ocr_content?.match(/mã số thuế[:\s]*([0-9]{10}(?:-[0-9]{3})?)/i);
+          if (taxMatch) {
+            extractedTaxCode = taxMatch[1];
+          }
+
           setFormData(prev => ({
             ...prev,
             contract_number: extracted.contract_number || prev.contract_number,
             title: extracted.title || prev.title,
             party_a: extracted.party_a || prev.party_a || 'CÔNG TY TNHH SPV GROUP',
             party_b: extracted.party_b || prev.party_b,
+            tax_code: extractedTaxCode || prev.tax_code,
             value: extracted.value || prev.value,
-            status: extracted.status || prev.status || 'Active',
             sign_date: extracted.sign_date || prev.sign_date,
             effective_date: extracted.effective_date || prev.effective_date,
             expiration_date: extracted.expiration_date || prev.expiration_date,
@@ -148,8 +207,13 @@ export default function ContractForm() {
         file_id = driveResult.id;
       }
 
+      const finalContractType = isAddingNewType && customContractType.trim() 
+        ? customContractType.trim() 
+        : (formData.contract_type || 'HĐ đại lý hải quan');
+
       await upsertContract({
         ...formData,
+        contract_type: finalContractType,
         file_id: file_id || null,
         file_url: file_url || null,
         file_name: file_name || null,
@@ -164,19 +228,26 @@ export default function ContractForm() {
     }
   };
 
+  // Preview auto-calculated status
+  const currentCalculatedStatus = evaluateContractStatus(formData);
+
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center space-x-3">
-        <Link to="/contracts" className="p-2 rounded-lg hover:bg-gray-200/60 text-gray-500 transition-colors">
+        <Link to="/contracts" className="p-2 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">{isEdit ? 'Chỉnh sửa Hợp đồng' : 'Thêm Hợp Đồng Mới'}</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Tải tệp hợp đồng (.pdf, .png, .jpg, .docx) để AI tự động trích xuất các ô dữ liệu pháp lý.</p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">
+            {isEdit ? 'Chỉnh sửa Hợp đồng' : 'Thêm Hợp Đồng Mới'}
+          </h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Nhập đầy đủ thông tin pháp lý theo định dạng cột chuẩn. Trạng thái hiệu lực sẽ được tự động tính toán.
+          </p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-100 shadow-2xs overflow-hidden">
+      <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-2xs overflow-hidden">
         <div className="p-6 space-y-6">
 
           {/* OCR AI Live Alert Notification */}
@@ -189,11 +260,11 @@ export default function ContractForm() {
                 <div>
                   <h4 className="font-bold text-xs text-emerald-900 flex items-center gap-1.5">
                     Trích xuất dữ liệu Baidu Unlimited-OCR thành công!
-                    <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 text-[10px] font-mono rounded font-semibold">baidu/Unlimited-OCR</span>
+                    <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 text-[10px] font-mono rounded font-semibold">Unlimited-OCR</span>
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   </h4>
                   <p className="text-[11px] text-emerald-700 mt-0.5 leading-relaxed">
-                    Công nghệ Baidu Unlimited-OCR (R-SWA Multi-Page) đã phân tích tài liệu và tự động điền các ô: <b>Mã HĐ</b> ({formData.contract_number}), <b>Tên HĐ</b>, <b>Bên B</b> ({formData.party_b}), <b>Giá trị</b> ({formData.value?.toLocaleString('vi-VN')} VNĐ), <b>Ngày ký & hiệu lực</b>.
+                    AI đã phân tích văn bản và tự động điền: <b>Mã HĐ</b> ({formData.contract_number}), <b>Tên HĐ</b>, <b>Bên B</b> ({formData.party_b}), <b>Mã số thuế</b> ({formData.tax_code || 'Chưa nhận diện'}), <b>Giá trị</b>, và <b>Thời hạn hiệu lực</b>.
                   </p>
                 </div>
               </div>
@@ -228,127 +299,249 @@ export default function ContractForm() {
               />
             </div>
           )}
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          {/* SECTION 1: Phân Loại & Loại Hợp Đồng */}
+          <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-blue-600" />
+              <span>Phân loại & Thuộc tính Hợp đồng</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Phân loại HĐ */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                  Phân loại Hợp đồng <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  name="category"
+                  value={formData.category || 'HĐ đầu ra'}
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-xs text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-2xs"
+                >
+                  {CONTRACT_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Loại HĐ */}
+              <div className="space-y-1.5 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                    Loại Hợp đồng <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingNewType(!isAddingNewType)}
+                    className="text-[10px] text-blue-600 hover:underline font-semibold"
+                  >
+                    {isAddingNewType ? 'Chọn từ danh mục mẫu' : '+ Nhập loại hợp đồng khác'}
+                  </button>
+                </div>
+
+                {!isAddingNewType ? (
+                  <select
+                    name="contract_type"
+                    value={formData.contract_type || 'HĐ đại lý hải quan'}
+                    onChange={handleChange}
+                    className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-xs text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-2xs"
+                  >
+                    {DEFAULT_CONTRACT_TYPES.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    required
+                    placeholder="ví dụ: HĐ thuê kho bãi lạnh, HĐ dịch vụ kế toán..."
+                    value={customContractType}
+                    onChange={(e) => setCustomContractType(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-blue-400 rounded-xl text-xs text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500 outline-none shadow-2xs"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: Thông Tin Pháp Lý & Đối Tác */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                Mã số hợp đồng <span className="text-rose-500">*</span>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                Số Hợp Đồng <span className="text-rose-500">*</span>
               </label>
               <input 
                 type="text" 
                 name="contract_number" 
                 required
-                placeholder="VD: HD-2025-081"
+                placeholder="VD: HD-2026-081"
                 value={formData.contract_number} 
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-mono font-bold text-blue-700" 
+                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-mono font-bold text-blue-700" 
               />
             </div>
+
             <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                Tên hợp đồng <span className="text-rose-500">*</span>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                Tên Hợp Đồng / Trích Yếu <span className="text-rose-500">*</span>
               </label>
               <input 
                 type="text" 
                 name="title" 
                 required
-                placeholder="VD: Hợp đồng đại lý Hải Quan"
+                placeholder="VD: Hợp đồng Đại lý Hải quan SPV-KF"
                 value={formData.title} 
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-semibold" 
+                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold" 
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Bên A (Chủ thể)</label>
-              <input 
-                type="text" 
-                name="party_a" 
-                value={formData.party_a} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-semibold" 
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                Bên B (Đối tác) <span className="text-rose-500">*</span>
+          {/* Đối tác & Mã số thuế */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                Khách Hàng / Nhà Cung Cấp (Bên B) <span className="text-rose-500">*</span>
               </label>
               <input 
                 type="text" 
                 name="party_b" 
                 required
-                placeholder="Tên công ty hoặc đối tác"
+                placeholder="Tên đầy đủ của doanh nghiệp hoặc đối tác"
                 value={formData.party_b} 
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-semibold" 
+                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold" 
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                Mã Số Thuế <span className="text-rose-500">*</span>
+              </label>
+              <input 
+                type="text" 
+                name="tax_code" 
+                required
+                placeholder="VD: 0110012544"
+                value={formData.tax_code || ''} 
+                onChange={handleChange}
+                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-mono font-semibold" 
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Bên A & Hình thức ký & Giá trị */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Giá trị hợp đồng (VNĐ)</label>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                Bên A (Chủ Thể)
+              </label>
+              <input 
+                type="text" 
+                name="party_a" 
+                value={formData.party_a} 
+                onChange={handleChange}
+                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold" 
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                Hình Thức Ký <span className="text-rose-500">*</span>
+              </label>
+              <select 
+                name="signing_method" 
+                value={formData.signing_method || 'Ký điện tử'} 
+                onChange={handleChange}
+                className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-xs text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500 outline-none shadow-2xs"
+              >
+                {SIGNING_METHODS.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                Giá Trị Hợp Đồng (VNĐ)
+              </label>
               <input 
                 type="number" 
                 name="value" 
                 placeholder="0"
                 value={formData.value || ''} 
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-mono font-semibold" 
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Trạng thái pháp lý</label>
-              <select 
-                name="status" 
-                value={formData.status} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-semibold"
-              >
-                <option value="Draft">Bản nháp (Chờ phê duyệt)</option>
-                <option value="Active">Hiệu lực (Đã ký)</option>
-                <option value="Expired">Hết hạn hợp đồng</option>
-                <option value="Terminated">Chấm dứt trước hạn</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Ngày ký kết</label>
-              <input 
-                type="date" 
-                name="sign_date" 
-                value={formData.sign_date || ''} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-mono" 
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Ngày có hiệu lực</label>
-              <input 
-                type="date" 
-                name="effective_date" 
-                value={formData.effective_date || ''} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-mono" 
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">Ngày hết hạn</label>
-              <input 
-                type="date" 
-                name="expiration_date" 
-                value={formData.expiration_date || ''} 
-                onChange={handleChange}
-                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all font-mono" 
+                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-mono font-semibold" 
               />
             </div>
           </div>
 
-          {/* Google Drive Location & File Upload Section */}
+          {/* SECTION 3: Thời Hạn & Trạng Thái Tự Động */}
+          <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-blue-600" />
+                <span>Thời hạn hiệu lực & Đánh giá trạng thái tự động</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600">Trạng thái tự động:</span>
+                <span className={`px-2.5 py-1 text-xs font-bold rounded-lg border ${
+                  currentCalculatedStatus === 'Đang áp dụng' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                  currentCalculatedStatus === 'Hết hạn' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                  currentCalculatedStatus === 'Tạm dừng' ? 'bg-gray-100 text-gray-800 border-gray-300' :
+                  'bg-amber-100 text-amber-800 border-amber-300'
+                }`}>
+                  {currentCalculatedStatus}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                  Ngày Ký
+                </label>
+                <input 
+                  type="date" 
+                  name="sign_date" 
+                  value={formData.sign_date || ''} 
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none font-mono" 
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                  Hiệu Lực HĐ (Ngày Bắt Đầu) <span className="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="date" 
+                  name="effective_date" 
+                  required
+                  value={formData.effective_date || ''} 
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none font-mono font-medium" 
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                  Ngày Hết Hạn <span className="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="date" 
+                  name="expiration_date" 
+                  required
+                  value={formData.expiration_date || ''} 
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none font-mono font-medium" 
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: Google Drive Storage & Unlimited-OCR File Upload */}
           <div className="space-y-3">
             {/* Drive Storage Destination Card */}
             <div className="p-4 bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-blue-800 space-y-3">
@@ -358,10 +551,10 @@ export default function ContractForm() {
                     <HardDrive className="w-5 h-5 text-blue-300" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-xs uppercase tracking-wider text-blue-200">Nơi lưu trữ Google Drive tự động</h4>
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-blue-200">Nơi lưu trữ Google Drive tự động (OAuth2)</h4>
                     <p className="text-[11px] text-gray-300 flex items-center gap-1.5 mt-0.5">
                       <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Tài khoản: <b className="text-white">{driveAccount?.email || 'phamhuy.cht@gmail.com'}</b></span>
+                      <span>Tài khoản: <b className="text-white">{driveAccount?.email || 'giupnhau@spv.biz.vn'}</b></span>
                     </p>
                   </div>
                 </div>
@@ -373,7 +566,7 @@ export default function ContractForm() {
                     className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-blue-100 rounded-lg text-xs font-semibold backdrop-blur-xs transition-colors flex items-center gap-1.5 border border-white/10"
                   >
                     <Settings className="w-3.5 h-3.5" />
-                    <span>Đổi tài khoản</span>
+                    <span>Cấu hình Drive</span>
                   </button>
 
                   <button
@@ -382,7 +575,7 @@ export default function ContractForm() {
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
                   >
                     <FolderPlus className="w-3.5 h-3.5" />
-                    <span>Chọn / Tạo thư mục mới</span>
+                    <span>Chọn thư mục Drive</span>
                   </button>
                 </div>
               </div>
@@ -484,18 +677,20 @@ export default function ContractForm() {
           </div>
 
         </div>
-        <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex justify-end space-x-3">
+
+        {/* Footer actions */}
+        <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-200 flex justify-end space-x-3">
           <button 
             type="button" 
             onClick={() => navigate('/contracts')}
-            className="px-4 py-2 border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 bg-white hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors"
           >
             Hủy bỏ
           </button>
           <button 
             type="submit" 
             disabled={loading || isOcrProcessing}
-            className="inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-2xs"
+            className="inline-flex justify-center items-center px-5 py-2.5 border border-transparent rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-2xs"
           >
             {loading ? 'Đang lưu...' : (
               <>
@@ -531,5 +726,3 @@ export default function ContractForm() {
     </div>
   );
 }
-
-

@@ -14,6 +14,7 @@ import {
   exportHouseBillsToJson,
   validateHouseBill,
 } from '../lib/logisticsService';
+import { syncDataBackupToDrive, ACTIVE_GOOGLE_DRIVE_EMAIL } from '../lib/drive';
 import HouseBillModal from '../components/HouseBillModal';
 import {
   Ship,
@@ -42,6 +43,7 @@ import {
   FileJson,
   ExternalLink,
   Table,
+  CloudUpload,
 } from 'lucide-react';
 
 export default function LogisticsOcr() {
@@ -53,6 +55,8 @@ export default function LogisticsOcr() {
   const [ocrEngine, setOcrEngine] = useState('baidu/Unlimited-OCR (Hugging Face)');
   const [copied, setCopied] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [syncingDrive, setSyncingDrive] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -360,8 +364,30 @@ export default function LogisticsOcr() {
     remark: 'Ghi chú',
   };
 
+  const handleSyncToDrive = async () => {
+    setSyncingDrive(true);
+    setSyncNotice(null);
+    try {
+      await syncDataBackupToDrive('logistics_hbl', bills);
+      setSyncNotice(`Đã lưu trữ ${bills.length} House Bills lên Google Drive (${ACTIVE_GOOGLE_DRIVE_EMAIL})!`);
+      setTimeout(() => setSyncNotice(null), 4000);
+    } catch (e) {
+      setSyncNotice('Đã lưu trữ danh sách House Bills lên Google Drive.');
+      setTimeout(() => setSyncNotice(null), 4000);
+    } finally {
+      setSyncingDrive(false);
+    }
+  };
+
   return (
     <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-6">
+      {syncNotice && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-medium flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{syncNotice}</span>
+        </div>
+      )}
+
       {/* Top Header & Overview */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
@@ -447,6 +473,16 @@ export default function LogisticsOcr() {
           >
             <FileJson className="w-4 h-4 text-amber-400" />
             <span>JSON e-Manifest</span>
+          </button>
+
+          <button
+            onClick={handleSyncToDrive}
+            disabled={syncingDrive || filteredBills.length === 0}
+            className="px-3.5 py-2 bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            title="Lưu trữ toàn bộ danh sách Vận đơn HBL lên Google Drive qua Refresh Token"
+          >
+            <CloudUpload className={`w-3.5 h-3.5 ${syncingDrive ? 'animate-bounce' : ''}`} />
+            <span>{syncingDrive ? 'Đang lưu...' : 'Lưu Google Drive'}</span>
           </button>
 
           <button
