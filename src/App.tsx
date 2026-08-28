@@ -10,7 +10,6 @@ import Contracts from './pages/Contracts';
 import ContractForm from './pages/ContractForm';
 import ContractView from './pages/ContractView';
 import SmartContractEditor from './pages/SmartContractEditor';
-import LogisticsOcr from './pages/LogisticsOcr';
 
 export default function App() {
   return (
@@ -18,7 +17,6 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
-          <Route path="logistics-ocr" element={<LogisticsOcr />} />
           <Route path="contracts" element={<Contracts />} />
           <Route path="contracts/new" element={<ContractForm />} />
           <Route path="smart-editor" element={<SmartContractEditor />} />
