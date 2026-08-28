@@ -25,8 +25,7 @@ export const ACTIVE_GOOGLE_DRIVE_EMAIL = "giupnhau@spv.biz.vn";
 
 export const DEFAULT_DRIVE_FOLDERS: DriveFolder[] = [
   { id: 'folder_legal_2026', name: '📁 Hợp đồng Pháp chế SPV 2026', description: 'Thư mục quản lý hồ sơ pháp chế & hợp đồng chính thức' },
-  { id: 'folder_logistics_hbl', name: '📁 Danh sách Vận đơn gom hàng (HBL)', description: 'Lưu trữ tệp Excel & Manifest HBL Hải quan' },
-  { id: 'folder_logistics', name: '📁 Hợp đồng Vận tải & Logistics', description: 'Lưu trữ hợp đồng vận chuyển đường biển/đường bộ' },
+  { id: 'folder_logistics', name: '📁 Hợp đồng Vận tải & Dịch vụ', description: 'Lưu trữ hợp đồng dịch vụ vận chuyển & giao nhận' },
   { id: 'folder_kangfoods', name: '📁 Hồ sơ Đối tác Kang Foods', description: 'Hồ sơ hợp đồng thương mại & đại lý đối tác' },
   { id: 'folder_customs_agents', name: '📁 Hợp đồng Đại lý Hải quan', description: 'Hợp đồng ủy quyền và thông quan dịch vụ' },
   { id: 'folder_backups', name: '📁 Sao lưu Dữ liệu Đám mây SPV', description: 'Bản lưu trữ cơ sở dữ liệu định kỳ' },
@@ -176,7 +175,7 @@ export const uploadFileToDrive = async (
 };
 
 export const syncDataBackupToDrive = async (
-  type: 'contracts' | 'logistics_hbl' | 'full_system',
+  type: 'contracts' | 'full_system',
   payload: any
 ): Promise<{ success: boolean; backup_file_name?: string; webViewLink?: string; message?: string }> => {
   try {
