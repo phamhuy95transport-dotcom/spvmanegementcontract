@@ -40,6 +40,7 @@ import {
   Download
 } from 'lucide-react';
 import { format, addYears, addMonths, parseISO, isAfter, isBefore } from 'date-fns';
+import ExpertOCRModal from '../components/ExpertOCRModal';
 
 export default function Contracts() {
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -54,6 +55,7 @@ export default function Contracts() {
   const [onlyAlertsFilter, setOnlyAlertsFilter] = useState(false);
 
   // Modals state
+  const [isExpertOcrOpen, setIsExpertOcrOpen] = useState(false);
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -376,6 +378,15 @@ export default function Contracts() {
 
         <div className="flex items-center flex-wrap gap-2.5">
           <button
+            onClick={() => setIsExpertOcrOpen(true)}
+            className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-xl transition-all text-xs font-bold shadow-xs hover:shadow-md"
+            title="Mở Chuyên gia OCR và trích xuất dữ liệu chứng từ, hợp đồng kinh tế"
+          >
+            <Sparkles className="w-4 h-4 mr-1.5 text-blue-200 animate-pulse" />
+            <span>Chuyên Gia OCR & Trích Xuất</span>
+          </button>
+
+          <button
             onClick={handleSyncToDrive}
             disabled={syncingDrive || contracts.length === 0}
             className="inline-flex items-center justify-center px-3.5 py-2 bg-white border border-gray-200 text-slate-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold shadow-2xs disabled:opacity-50"
@@ -387,7 +398,7 @@ export default function Contracts() {
 
           <Link 
             to="/contracts/new" 
-            className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors text-xs font-bold shadow-2xs"
+            className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition-colors text-xs font-bold shadow-2xs"
           >
             <PlusCircle className="w-4 h-4 mr-1.5" />
             <span>Thêm hợp đồng mới</span>
@@ -1007,6 +1018,13 @@ export default function Contracts() {
           </div>
         </div>
       )}
+
+      {/* Expert OCR & Contract Extraction Modal */}
+      <ExpertOCRModal
+        isOpen={isExpertOcrOpen}
+        onClose={() => setIsExpertOcrOpen(false)}
+        onContractCreated={() => fetchContracts()}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, ChangeEvent, FormEvent } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { 
   fetchContractById, 
   upsertContract, 
@@ -19,7 +19,7 @@ import {
   ACTIVE_GOOGLE_CLIENT_ID
 } from '../lib/drive';
 import { compressContractFile, CompressionResult } from '../lib/fileCompression';
-import { processContractFileOCR, fileToBase64 } from '../lib/ocrService';
+import { processContractFileOCR, fileToBase64, isSPVEntity } from '../lib/ocrService';
 import GoogleDriveFolderModal from '../components/GoogleDriveFolderModal';
 import GoogleDriveAccountModal from '../components/GoogleDriveAccountModal';
 import { 
@@ -47,23 +47,27 @@ import { Contract, ContractCategory, ContractType, SigningMethod } from '../type
 
 export default function ContractForm() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const isEdit = !!id;
 
-  const [formData, setFormData] = useState<Partial<Contract>>({
-    category: 'HĐ đầu ra',
-    contract_type: 'HĐ đại lý hải quan',
-    contract_number: '',
-    title: '',
-    party_a: 'CÔNG TY TNHH SPV GROUP', // default
-    party_b: '',
-    tax_code: '',
-    signing_method: 'Ký điện tử',
-    value: 0,
-    sign_date: '',
-    effective_date: '',
-    expiration_date: '',
-    ocr_content: '',
+  const [formData, setFormData] = useState<Partial<Contract>>(() => {
+    const prefill = (location.state as any)?.prefill;
+    return {
+      category: 'HĐ đầu ra',
+      contract_type: 'HĐ đại lý hải quan',
+      contract_number: prefill?.contract_number || '',
+      title: prefill?.title || '',
+      party_a: 'CÔNG TY TNHH SPV GROUP', // default
+      party_b: prefill?.party_b || '',
+      tax_code: prefill?.tax_code || '',
+      signing_method: 'Ký điện tử',
+      value: 0,
+      sign_date: prefill?.sign_date || '',
+      effective_date: prefill?.effective_date || '',
+      expiration_date: prefill?.expiration_date || '',
+      ocr_content: prefill?.ocr_content || '',
+    };
   });
 
   const [customContractType, setCustomContractType] = useState('');
@@ -155,20 +159,31 @@ export default function ContractForm() {
         });
 
         if (extracted) {
-          // Extract tax code if present in OCR text
-          let extractedTaxCode = '';
-          const taxMatch = extracted.ocr_content?.match(/MST[:\s]*([0-9]{10}(?:-[0-9]{3})?)/i) ||
-                           extracted.ocr_content?.match(/mã số thuế[:\s]*([0-9]{10}(?:-[0-9]{3})?)/i);
-          if (taxMatch) {
-            extractedTaxCode = taxMatch[1];
+          // Extract tax code if present in OCR text (excluding SPV tax code)
+          let extractedTaxCode = extracted.party_b_tax || '';
+          if (!extractedTaxCode) {
+            const taxMatches = extracted.ocr_content?.matchAll(/(?:Mã số thuế|MST|Tax Code)\s*[:.-]?\s*([0-9]{10}(?:-[0-9]{3})?)/gi);
+            if (taxMatches) {
+              for (const tm of taxMatches) {
+                if (tm[1] !== '0101234567') {
+                  extractedTaxCode = tm[1];
+                  break;
+                }
+              }
+            }
+          }
+
+          let partnerName = extracted.party_b;
+          if (isSPVEntity(partnerName)) {
+            partnerName = '';
           }
 
           setFormData(prev => ({
             ...prev,
             contract_number: extracted.contract_number || prev.contract_number,
             title: extracted.title || prev.title,
-            party_a: extracted.party_a || prev.party_a || 'CÔNG TY TNHH SPV GROUP',
-            party_b: extracted.party_b || prev.party_b,
+            party_a: 'CÔNG TY TNHH SPV GROUP',
+            party_b: partnerName || prev.party_b,
             tax_code: extractedTaxCode || prev.tax_code,
             value: extracted.value || prev.value,
             sign_date: extracted.sign_date || prev.sign_date,
